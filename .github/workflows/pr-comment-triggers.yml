@@ -74,9 +74,15 @@ jobs:
             --ref "${{ github.event.repository.default_branch }}" \
             -f pr_number="${{ github.event.issue.number }}" \
             -f environment="$ENV" \
-            -f triggered_by="${{ github.event.comment.user.login }}"
+            -f triggered_by="${{ github.event.comment.user.login }}" \
+            -f comment_id="${{ github.event.comment.id }}"
 
+          # Update the original comment with status
+          ORIGINAL_BODY="${{ github.event.comment.body }}"
           cat > /tmp/comment.txt <<EOF
+          $ORIGINAL_BODY
+
+          ---
           🚀 **$ACTION_TEXT triggered by @${{ github.event.comment.user.login }}**
 
           **Action:** \`$ACTION\`
@@ -85,14 +91,16 @@ jobs:
           [View workflow runs →](${{ github.server_url }}/${{ github.repository }}/actions/workflows/$WORKFLOW_FILE)
           EOF
 
-          gh pr comment ${{ github.event.issue.number }} \
-            --repo "${{ github.repository }}" \
-            --body-file /tmp/comment.txt
+          gh api \
+            --method PATCH \
+            -H "Accept: application/vnd.github+json" \
+            "/repos/${{ github.repository }}/issues/comments/${{ github.event.comment.id }}" \
+            -f body="$(cat /tmp/comment.txt)"
         env:
           GH_TOKEN: ${{ github.token }}
 
       - name: Trigger testing workflow
-        if: steps.parse.outputs.valid == 'true'
+        if: steps.parse.outputs.valid == 'true' && steps.parse.outputs.action == 'test'
         run: |
           ACTION="${{ steps.parse.outputs.action }}"
           ENV="${{ steps.parse.outputs.environment }}"
@@ -105,9 +113,15 @@ jobs:
             --ref "${{ github.event.repository.default_branch }}" \
             -f pr_number="${{ github.event.issue.number }}" \
             -f environment="$ENV" \
-            -f triggered_by="${{ github.event.comment.user.login }}"
+            -f triggered_by="${{ github.event.comment.user.login }}" \
+            -f comment_id="${{ github.event.comment.id }}"
 
+          # Update the original comment with status
+          ORIGINAL_BODY="${{ github.event.comment.body }}"
           cat > /tmp/comment.txt <<EOF
+          $ORIGINAL_BODY
+
+          ---
           🚀 **$ACTION_TEXT triggered by @${{ github.event.comment.user.login }}**
 
           **Action:** \`$ACTION\`
@@ -116,8 +130,10 @@ jobs:
           [View workflow runs →](${{ github.server_url }}/${{ github.repository }}/actions/workflows/$WORKFLOW_FILE)
           EOF
 
-          gh pr comment ${{ github.event.issue.number }} \
-            --repo "${{ github.repository }}" \
-            --body-file /tmp/comment.txt
+          gh api \
+            --method PATCH \
+            -H "Accept: application/vnd.github+json" \
+            "/repos/${{ github.repository }}/issues/comments/${{ github.event.comment.id }}" \
+            -f body="$(cat /tmp/comment.txt)"
         env:
           GH_TOKEN: ${{ github.token }}
