@@ -2,7 +2,7 @@ name: Check Deployment Status
 
 on:
   pull_request:
-    types: [opened, synchronize, labeled, unlabeled]
+    types: [labeled, unlabeled]
 
 permissions:
   contents: read
