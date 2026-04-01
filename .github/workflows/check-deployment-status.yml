@@ -132,7 +132,7 @@ jobs:
             echo "- $QAT_TESTED_STATUS Tested in QAT (\`tested:qat\`)" >> $GITHUB_STEP_SUMMARY
             echo "- $CRPTRN_DEPLOYED_STATUS Deployed in CRPTRN (\`deployed:crptrn\`)" >> $GITHUB_STEP_SUMMARY
             echo "- $CRPTRN_TESTED_STATUS Tested in CRPTRN (\`tested:crptrn\`)" >> $GITHUB_STEP_SUMMARY
-            
+
             echo "" >> $GITHUB_STEP_SUMMARY
             echo "### How to Deploy" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
@@ -191,10 +191,15 @@ jobs:
 
           ### How to Deploy
           Comment on this PR with:
-          - \`/deploy adt\` - Deploy and test in ADT [Optional]
-          - \`/deploy qat\` - Deploy and test in QAT [Required]
-          - \`/deploy crptrn\` - Deploy and test in CRPTRN [Required]
+          - \`/deploy adt\` - Deploy and tests in ADT [Optional]
+          - \`/deploy qat\` - Deploy and tests in QAT [Required]
+          - \`/deploy crptrn\` - Deploy and tests in CRPTRN [Required]
 
+          ### How to test an already deployed build
+          Comment on this PR with:
+          - \`/test adt\` - Tests in ADT [Optional]
+          - \`/test qat\` - Tests in QAT [Required]
+          - \`/test crptrn\` - Tests in CRPTRN [Required]
           ---
           <sub>This check will automatically update when deployment labels are applied.</sub>
           EOF
