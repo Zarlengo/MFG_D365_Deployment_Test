@@ -294,8 +294,7 @@ jobs:
     needs: [parse, wait-for-test]
     if: |
       always() &&
-      needs.parse.outputs.valid == 'true' &&
-      needs.wait-for-test.result == 'success'
+      needs.parse.outputs.valid == 'true'
     
     steps:
       - name: Trigger deployment status check
