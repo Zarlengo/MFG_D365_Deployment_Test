@@ -19,7 +19,7 @@ jobs:
     runs-on: ubuntu-latest
     if: |
       github.event.issue.pull_request &&
-      (startsWith(github.event.comment.body, '/deploy') || startsWith(github.event.comment.body, '/test'))
+      (startsWith(github.event.comment.body, '/deploy') || startsWith(github.event.comment.body, '/test') || startsWith(github.event.comment.body, '/check'))
 
     outputs:
       valid: ${{ steps.parse.outputs.valid }}
@@ -40,6 +40,10 @@ jobs:
           elif [[ "$COMMENT" =~ ^/test[[:space:]]+(adt|qat|crptrn) ]]; then
             echo "action=test" >> $GITHUB_OUTPUT
             echo "environment=${BASH_REMATCH[1]}" >> $GITHUB_OUTPUT
+            echo "valid=true" >> $GITHUB_OUTPUT
+          elif [[ "$COMMENT" =~ ^/check ]]; then
+            echo "action=check" >> $GITHUB_OUTPUT
+            echo "environment=" >> $GITHUB_OUTPUT
             echo "valid=true" >> $GITHUB_OUTPUT
           else
             echo "valid=false" >> $GITHUB_OUTPUT
@@ -310,7 +314,8 @@ jobs:
     needs: [parse, wait-for-test]
     if: |
       always() &&
-      needs.parse.outputs.valid == 'true'
+      needs.parse.outputs.valid == 'true' &&
+      (needs.parse.outputs.action == 'check' || needs.wait-for-test.result != 'skipped')
     
     steps:
       - name: Checkout code
