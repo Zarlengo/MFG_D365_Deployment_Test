@@ -4,6 +4,10 @@ on:
   pull_request:
     types: [opened, synchronize, labeled, unlabeled]
 
+permissions:
+  contents: read
+  pull-requests: read
+
 jobs:
   check-deployment-requirements:
     name: Verify Deployment Status
