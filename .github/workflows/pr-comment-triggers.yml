@@ -12,24 +12,21 @@ permissions:
 
 jobs:
   # ============================================
-  # Handle PR Comments (/deploy, /test)
+  # Parse PR Comment
   # ============================================
-  handle-comment:
-    name: Parse Deployment Command
+  parse:
+    name: Parse Command
     runs-on: ubuntu-latest
     if: |
       github.event.issue.pull_request &&
       (startsWith(github.event.comment.body, '/deploy') || startsWith(github.event.comment.body, '/test'))
+    
+    outputs:
+      valid: ${{ steps.parse.outputs.valid }}
+      action: ${{ steps.parse.outputs.action }}
+      environment: ${{ steps.parse.outputs.environment }}
 
     steps:
-      - name: Debug - Show comment info
-        run: |
-          echo "Event name: ${{ github.event_name }}"
-          echo "Is PR: ${{ github.event.issue.pull_request }}"
-          echo "Comment body: ${{ github.event.comment.body }}"
-          echo "Comment starts with /deploy: ${{ startsWith(github.event.comment.body, '/deploy') }}"
-          echo "Comment starts with /test: ${{ startsWith(github.event.comment.body, '/test') }}"
-
       - name: Parse command
         id: parse
         run: |
@@ -48,10 +45,18 @@ jobs:
             echo "valid=false" >> $GITHUB_OUTPUT
           fi
 
-      - name: React to comment
-        if: steps.parse.outputs.valid == 'true'
+  # ============================================
+  # React to Comment
+  # ============================================
+  react:
+    name: Add Reaction
+    runs-on: ubuntu-latest
+    needs: parse
+    if: needs.parse.outputs.valid == 'true'
+
+    steps:
+      - name: Add rocket emoji
         run: |
-          # Add rocket emoji to show command was received
           gh api \
             --method POST \
             -H "Accept: application/vnd.github+json" \
@@ -60,11 +65,22 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
 
-      - name: Trigger deployment workflow
-        if: steps.parse.outputs.valid == 'true' && steps.parse.outputs.action == 'deploy'
+  # ============================================
+  # Trigger Deployment
+  # ============================================
+  trigger-deploy:
+    name: Trigger Deployment
+    runs-on: ubuntu-latest
+    needs: parse
+    if: |
+      needs.parse.outputs.valid == 'true' &&
+      needs.parse.outputs.action == 'deploy'
+
+    steps:
+      - name: Remove stale labels and trigger workflow
         run: |
-          ACTION="${{ steps.parse.outputs.action }}"
-          ENV="${{ steps.parse.outputs.environment }}"
+          ACTION="${{ needs.parse.outputs.action }}"
+          ENV="${{ needs.parse.outputs.environment }}"
 
           WORKFLOW_FILE="ado-pipeline-deploy.yml"
           ACTION_TEXT="Deployment"
@@ -108,11 +124,22 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
 
-      - name: Trigger testing workflow
-        if: steps.parse.outputs.valid == 'true'
+  # ============================================
+  # Trigger Testing
+  # ============================================
+  trigger-test:
+    name: Trigger Testing
+    runs-on: ubuntu-latest
+    needs: parse
+    if: |
+      needs.parse.outputs.valid == 'true' &&
+      needs.parse.outputs.action == 'test'
+
+    steps:
+      - name: Remove stale labels and trigger workflow
         run: |
-          ACTION="${{ steps.parse.outputs.action }}"
-          ENV="${{ steps.parse.outputs.environment }}"
+          ACTION="${{ needs.parse.outputs.action }}"
+          ENV="${{ needs.parse.outputs.environment }}"
 
           WORKFLOW_FILE="ado-pipeline-test.yml"
           ACTION_TEXT="Testing"
