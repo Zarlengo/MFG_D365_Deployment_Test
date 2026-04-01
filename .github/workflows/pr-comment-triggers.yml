@@ -254,7 +254,6 @@ jobs:
     if: |
       always() &&
       needs.parse.outputs.valid == 'true' &&
-      needs.parse.outputs.action == 'deploy' &&
       needs.trigger-test.result == 'success'
     outputs:
       success: ${{ steps.wait.outputs.success }}
@@ -295,7 +294,8 @@ jobs:
     needs: [parse, wait-for-test]
     if: |
       always() &&
-      needs.parse.outputs.action == 'deploy'
+      needs.parse.outputs.valid == 'true' &&
+      needs.wait-for-test.result == 'success'
     
     steps:
       - name: Trigger deployment status check
