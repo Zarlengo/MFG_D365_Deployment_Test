@@ -120,11 +120,40 @@ jobs:
           ENV="${{ github.event.inputs.environment }}"
           ENV_UPPER=$(echo "$ENV" | tr '[:lower:]' '[:upper:]')
           
+          # Wait a moment to ensure we get the latest comment
+          sleep 2
+          
           # Get the current comment body
           CURRENT_BODY=$(gh api "/repos/${{ github.repository }}/issues/comments/${{ github.event.inputs.comment_id }}" --jq '.body')
           
           # Remove the "Deployment triggered" section (multiline block including preceding ---)
-          UPDATED_BODY=$(echo "$CURRENT_BODY" | perl -0pe 's/\n+---\n+🚀 \*\*Deployment triggered.*?\[View workflow runs →\]\)//s')
+          # Using a more robust approach with awk
+          UPDATED_BODY=$(echo "$CURRENT_BODY" | awk '
+            BEGIN { skip=0; buffer="" }
+            /^---$/ && !skip { 
+              # Store the --- line in case we dont skip
+              buffer = $0 "\n"
+              getline
+              if ($0 ~ /^$/) {
+                buffer = buffer $0 "\n"
+                getline
+                if ($0 ~ /🚀 \*\*Deployment triggered/) {
+                  skip = 1
+                  buffer = ""
+                  next
+                } else {
+                  printf "%s", buffer
+                  print
+                }
+              } else {
+                print "---"
+                print
+              }
+              next
+            }
+            skip && /View workflow runs/ { skip=0; next }
+            !skip { print }
+          ')
           
           cat > /tmp/comment.txt <<EOF
           $UPDATED_BODY
