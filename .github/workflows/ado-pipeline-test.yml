@@ -7,6 +7,10 @@ on:
         description: "PR number to label (leave empty to skip labeling)"
         required: false
         type: string
+      pr_branch:
+        description: "PR branch to checkout and test"
+        required: true
+        type: string
       environment:
         description: "Environment to test"
         required: true
@@ -37,6 +41,12 @@ jobs:
       test_status: ${{ steps.test.outcome }}
 
     steps:
+      - name: Checkout PR branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.pr_branch }}
+          fetch-depth: 0
+
       - name: Simulate Testing
         id: test
         run: |
