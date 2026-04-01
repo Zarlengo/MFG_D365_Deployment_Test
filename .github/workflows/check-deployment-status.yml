@@ -137,11 +137,11 @@ jobs:
             CRPTRN_TESTED_STATUS="❌"
             [ $(echo "$LABELS" | grep -c "^tested:crptrn$" || true) -gt 0 ] && CRPTRN_TESTED_STATUS="✅"
             
-            echo "❌ **Deployment and testing required**" >> $GITHUB_STEP_SUMMARY
+            echo "⏳ **Deployment and testing in progress**" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
-            echo "This PR modifies the \`/Metadata\` folder and must be deployed and tested in QAT and CRPTRN before merging." >> $GITHUB_STEP_SUMMARY
+            echo "This PR modifies the \`/Metadata\` folder and requires deployment and testing in QAT and CRPTRN before merging." >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
-            echo "### Required Labels" >> $GITHUB_STEP_SUMMARY
+            echo "### Current Status" >> $GITHUB_STEP_SUMMARY
 
             echo "- $QAT_DEPLOYED_STATUS Deployed in QAT (\`deployed:qat\`)" >> $GITHUB_STEP_SUMMARY
             echo "- $QAT_TESTED_STATUS Tested in QAT (\`tested:qat\`)" >> $GITHUB_STEP_SUMMARY
@@ -156,6 +156,7 @@ jobs:
             echo "- \`/deploy crptrn\` - Deploy and test in CRPTRN" >> $GITHUB_STEP_SUMMARY
             
             echo "can_merge=false" >> $GITHUB_OUTPUT
+            # Exit 1 to fail the check and block merging
             exit 1
           fi
         env:
