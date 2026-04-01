@@ -286,10 +286,10 @@ jobs:
           GH_TOKEN: ${{ github.token }}
 
   # ============================================
-  # Trigger Deployment Check
+  # Create Deployment Status Check
   # ============================================
-  trigger-deployment-check:
-    name: Trigger Deployment Check
+  create-deployment-check:
+    name: Create Deployment Status Check
     runs-on: ubuntu-latest
     needs: [parse, wait-for-test]
     if: |
@@ -297,15 +297,70 @@ jobs:
       needs.parse.outputs.valid == 'true'
     
     steps:
-      - name: Trigger deployment status check
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Run deployment status check
         run: |
-          echo "🔍 Triggering deployment status check for PR #${{ github.event.issue.number }}..."
+          PR_NUMBER="${{ github.event.issue.number }}"
           
-          gh workflow run check-deployment-status.yml \
-            --repo "${{ github.repository }}" \
-            --ref main \
-            -f pr_number="${{ github.event.issue.number }}"
+          echo "🔍 Checking deployment status for PR #$PR_NUMBER..."
           
-          echo "✅ Deployment check triggered"
+          # Get PR details including head SHA
+          PR_DATA=$(gh pr view "$PR_NUMBER" --json headRefOid,baseRefOid --jq '.')
+          HEAD_SHA=$(echo "$PR_DATA" | jq -r '.headRefOid')
+          BASE_SHA=$(echo "$PR_DATA" | jq -r '.baseRefOid')
+          
+          echo "PR Head SHA: $HEAD_SHA"
+          
+          # Check for metadata changes
+          METADATA_CHANGES=$(git diff --name-only "$BASE_SHA" "$HEAD_SHA" | grep '^Metadata/' || true)
+          
+          if [ -z "$METADATA_CHANGES" ]; then
+            echo "✅ No metadata changes - deployment not required"
+            STATE="success"
+            DESCRIPTION="No metadata changes - deployment not required"
+          else
+            echo "📦 Metadata changes detected - checking labels..."
+            
+            # Get PR labels
+            LABELS=$(gh pr view "$PR_NUMBER" --json labels --jq '.labels[].name')
+            
+            # Check for all 4 required labels
+            HAS_DEPLOYED_QAT=$(echo "$LABELS" | grep -c "^deployed:qat$" || true)
+            HAS_TESTED_QAT=$(echo "$LABELS" | grep -c "^tested:qat$" || true)
+            HAS_DEPLOYED_CRPTRN=$(echo "$LABELS" | grep -c "^deployed:crptrn$" || true)
+            HAS_TESTED_CRPTRN=$(echo "$LABELS" | grep -c "^tested:crptrn$" || true)
+            
+            MISSING_LABELS=()
+            [ "$HAS_DEPLOYED_QAT" -eq 0 ] && MISSING_LABELS+=("deployed:qat")
+            [ "$HAS_TESTED_QAT" -eq 0 ] && MISSING_LABELS+=("tested:qat")
+            [ "$HAS_DEPLOYED_CRPTRN" -eq 0 ] && MISSING_LABELS+=("deployed:crptrn")
+            [ "$HAS_TESTED_CRPTRN" -eq 0 ] && MISSING_LABELS+=("tested:crptrn")
+            
+            if [ ${#MISSING_LABELS[@]} -eq 0 ]; then
+              echo "✅ All deployment labels present"
+              STATE="success"
+              DESCRIPTION="All deployment and testing requirements met"
+            else
+              echo "❌ Missing labels: ${MISSING_LABELS[*]}"
+              STATE="failure"
+              DESCRIPTION="Missing labels: ${MISSING_LABELS[*]}"
+            fi
+          fi
+          
+          # Create commit status check
+          echo "📝 Creating commit status: $STATE"
+          gh api \
+            --method POST \
+            -H "Accept: application/vnd.github+json" \
+            "/repos/${{ github.repository }}/statuses/$HEAD_SHA" \
+            -f state="$STATE" \
+            -f description="$DESCRIPTION" \
+            -f context="Verify Deployment Status"
+          
+          echo "✅ Deployment check status created: $STATE"
         env:
           GH_TOKEN: ${{ github.token }}
