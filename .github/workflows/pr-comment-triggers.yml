@@ -1,0 +1,97 @@
+name: PR Comment Triggers
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+
+jobs:
+  # ============================================
+  # Handle PR Comments (/deploy, /test)
+  # ============================================
+  handle-comment:
+    name: Parse Deployment Command
+    runs-on: ubuntu-latest
+    if: |
+      github.event.issue.pull_request &&
+      (startsWith(github.event.comment.body, '/deploy') || startsWith(github.event.comment.body, '/test'))
+    
+    steps:
+      - name: Debug - Show comment info
+        run: |
+          echo "Event name: ${{ github.event_name }}"
+          echo "Is PR: ${{ github.event.issue.pull_request }}"
+          echo "Comment body: ${{ github.event.comment.body }}"
+          echo "Comment starts with /deploy: ${{ startsWith(github.event.comment.body, '/deploy') }}"
+          echo "Comment starts with /test: ${{ startsWith(github.event.comment.body, '/test') }}"
+      
+      - name: Parse command
+        id: parse
+        run: |
+          COMMENT="${{ github.event.comment.body }}"
+          
+          # Extract command and environment
+          if [[ "$COMMENT" =~ ^/deploy[[:space:]]+(adt|qat|crptrn) ]]; then
+            echo "action=deploy" >> $GITHUB_OUTPUT
+            echo "environment=${BASH_REMATCH[1]}" >> $GITHUB_OUTPUT
+            echo "valid=true" >> $GITHUB_OUTPUT
+          elif [[ "$COMMENT" =~ ^/test[[:space:]]+(adt|qat|crptrn) ]]; then
+            echo "action=test" >> $GITHUB_OUTPUT
+            echo "environment=${BASH_REMATCH[1]}" >> $GITHUB_OUTPUT
+            echo "valid=true" >> $GITHUB_OUTPUT
+          else
+            echo "valid=false" >> $GITHUB_OUTPUT
+          fi
+      
+      - name: React to comment
+        if: steps.parse.outputs.valid == 'true'
+        run: |
+          # Add rocket emoji to show command was received
+          gh api \
+            --method POST \
+            -H "Accept: application/vnd.github+json" \
+            "/repos/${{ github.repository }}/issues/comments/${{ github.event.comment.id }}/reactions" \
+            -f content='rocket'
+        env:
+          GH_TOKEN: ${{ github.token }}
+      
+      - name: Trigger workflow
+        if: steps.parse.outputs.valid == 'true'
+        run: |
+          ACTION="${{ steps.parse.outputs.action }}"
+          ENV="${{ steps.parse.outputs.environment }}"
+          
+          # Choose workflow based on action
+          if [ "$ACTION" = "deploy" ]; then
+            WORKFLOW_FILE="ado-pipeline-deploy.yml"
+            ACTION_TEXT="Deployment & Testing"
+          else
+            WORKFLOW_FILE="ado-pipeline-test.yml"
+            ACTION_TEXT="Testing"
+          fi
+          
+          gh workflow run "$WORKFLOW_FILE" \
+            --repo "${{ github.repository }}" \
+            --ref "${{ github.event.repository.default_branch }}" \
+            -f pr_number="${{ github.event.issue.number }}" \
+            -f environment="$ENV" \
+            -f triggered_by="${{ github.event.comment.user.login }}"
+          
+          cat > /tmp/comment.txt <<EOF
+          🚀 **$ACTION_TEXT triggered by @${{ github.event.comment.user.login }}**
+          
+          **Action:** \`$ACTION\`
+          **Environment:** \`$ENV\`
+          
+          [View workflow runs →](${{ github.server_url }}/${{ github.repository }}/actions/workflows/$WORKFLOW_FILE)
+          EOF
+          
+          gh pr comment ${{ github.event.issue.number }} \
+            --repo "${{ github.repository }}" \
+            --body-file /tmp/comment.txt
+        env:
+          GH_TOKEN: ${{ github.token }}
