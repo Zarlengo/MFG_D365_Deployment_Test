@@ -1,4 +1,4 @@
-name: Protect Deployment Labels
+name: Protect Labels
 
 on:
   pull_request:
@@ -9,47 +9,43 @@ permissions:
   pull-requests: write
 
 jobs:
-  validate-deployment-labels:
+  validate-labels:
     runs-on: ubuntu-latest
     steps:
       - name: Check if label was added by automation
         run: |
           echo "Label '${{ github.event.label.name }}' was added by: ${{ github.actor }}"
-          
-          # Allow github-actions bot to add deployment labels
+
+          # Allow github-actions bot to add labels
           if [ "${{ github.actor }}" = "github-actions[bot]" ]; then
             echo "✅ Label added by automation - allowed"
             exit 0
           fi
-          
-          # Remove manually-added deployment labels
-          echo "❌ Deployment labels can only be added by automation"
+
+          # Remove manually-added labels
+          echo "❌ Labels can only be added by automation"
           echo "Removing label: ${{ github.event.label.name }}"
-          
+
           gh pr edit ${{ github.event.pull_request.number }} \
             --remove-label "${{ github.event.label.name }}" \
             --repo "${{ github.repository }}"
-          
+
           cat > /tmp/comment.txt <<EOF
-          ⚠️ **Deployment labels are protected**
-          
+          ⚠️ **Labels are protected**
+
           The label \`${{ github.event.label.name }}\` was automatically removed.
-          
+
           Deployment and testing status labels are managed by automation and cannot be manually applied.
-          
+
           **To trigger deployments/tests:**
           - Use PR comments: \`/deploy adt\`, \`/test qat\`, etc.
           - Status labels will be auto-added on success
-          
-          Available protected label prefixes:
-          - \`deployed:*\` - Added after successful deployment
-          - \`tested:*\` - Added after successful testing
           EOF
-          
+
           gh pr comment ${{ github.event.pull_request.number }} \
             --repo "${{ github.repository }}" \
             --body-file /tmp/comment.txt
-          
-          exit 1
+
+          echo "✅ Protected label removed successfully"
         env:
           GH_TOKEN: ${{ github.token }}
