@@ -77,8 +77,8 @@ jobs:
           
           # Update the original comment if comment_id provided
           if [ -n "${{ github.event.inputs.comment_id }}" ]; then
-            # Wait a moment to ensure we get the latest comment (not cached)
-            sleep 2
+            # Wait to ensure we get the latest comment (after trigger-test updated it)
+            sleep 5
             
             # Get the current comment body
             CURRENT_BODY=$(gh api "/repos/${{ github.repository }}/issues/comments/${{ github.event.inputs.comment_id }}" --jq '.body')
@@ -118,8 +118,8 @@ jobs:
           ENV="${{ github.event.inputs.environment }}"
           ENV_UPPER=$(echo "$ENV" | tr '[:lower:]' '[:upper:]')
           
-          # Wait a moment to ensure we get the latest comment (not cached)
-          sleep 2
+          # Wait to ensure we get the latest comment (after trigger-test updated it)
+          sleep 5
           
           # Get the current comment body
           CURRENT_BODY=$(gh api "/repos/${{ github.repository }}/issues/comments/${{ github.event.inputs.comment_id }}" --jq '.body')

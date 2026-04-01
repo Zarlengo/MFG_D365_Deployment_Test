@@ -194,6 +194,7 @@ jobs:
           ENV="${{ needs.parse.outputs.environment }}"
 
           WORKFLOW_FILE="ado-pipeline-test.yml"
+          ACTION_TEXT="Testing"
 
           # Remove stale test label before starting
           echo "🗑️ Removing stale test label for $ENV environment..."
@@ -208,6 +209,28 @@ jobs:
             -f environment="$ENV" \
             -f triggered_by="${{ github.event.comment.user.login }}" \
             -f comment_id="${{ github.event.comment.id }}"
+          
+          # Update the original comment with testing triggered status
+          # Sleep to ensure we get latest comment (after deploy might have updated it)
+          sleep 2
+          ORIGINAL_BODY=$(gh api "/repos/${{ github.repository }}/issues/comments/${{ github.event.comment.id }}" --jq '.body')
+          
+          cat > /tmp/comment.txt <<EOF
+          $ORIGINAL_BODY
+
+          🚀 **$ACTION_TEXT triggered by @${{ github.event.comment.user.login }}**
+
+          **Action:** \`$ACTION\`
+          **Environment:** \`$ENV\`
+
+          [View workflow runs →](${{ github.server_url }}/${{ github.repository }}/actions/workflows/$WORKFLOW_FILE)
+          EOF
+
+          gh api \
+            --method PATCH \
+            -H "Accept: application/vnd.github+json" \
+            "/repos/${{ github.repository }}/issues/comments/${{ github.event.comment.id }}" \
+            -f body="$(cat /tmp/comment.txt)"
           
           echo "✅ Test workflow triggered for $ENV environment"
         env:
