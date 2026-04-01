@@ -4,6 +4,10 @@ on:
   pull_request:
     types: [labeled]
 
+permissions:
+  contents: read
+  pull-requests: write
+
 jobs:
   validate-deployment-labels:
     runs-on: ubuntu-latest
