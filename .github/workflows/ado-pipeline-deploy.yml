@@ -72,7 +72,7 @@ jobs:
 
           gh pr edit ${{ github.event.inputs.pr_number }} \
             --repo "${{ github.repository }}" \
-            --add-label "deployed:$ENV,tested:$ENV"
+            --add-label "deployed:$ENV"
 
           # Update the original comment if comment_id provided
           if [ -n "${{ github.event.inputs.comment_id }}" ]; then
@@ -82,11 +82,10 @@ jobs:
             cat > /tmp/comment.txt <<EOF
           $CURRENT_BODY
 
-          ✅ **$ENV_UPPER Deployment & Testing Complete**
+          ✅ **$ENV_UPPER Deployment Complete**
 
           - ✅ Deployed to $ENV_UPPER
-          - ✅ Tests passed in $ENV_UPPER
-          - 🏷️ Labels \`deployed:$ENV\` and \`tested:$ENV\` added
+          - 🏷️ Label \`deployed:$ENV\` added
 
           [View workflow run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
           EOF
@@ -112,7 +111,7 @@ jobs:
     steps:
       - name: Generate Summary
         run: |
-          echo "# Deployment & Testing Summary" >> $GITHUB_STEP_SUMMARY
+          echo "# Deployment Summary" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Environment:** ${{ github.event.inputs.environment }}" >> $GITHUB_STEP_SUMMARY
           if [ -n "${{ github.event.inputs.triggered_by }}" ]; then

@@ -75,9 +75,13 @@ jobs:
     if: |
       needs.parse.outputs.valid == 'true' &&
       needs.parse.outputs.action == 'deploy'
+    
+    outputs:
+      workflow_id: ${{ steps.trigger.outputs.workflow_id }}
 
     steps:
       - name: Remove stale labels and trigger workflow
+        id: trigger
         run: |
           ACTION="${{ needs.parse.outputs.action }}"
           ENV="${{ needs.parse.outputs.environment }}"
@@ -102,6 +106,14 @@ jobs:
             -f triggered_by="${{ github.event.comment.user.login }}" \
             -f comment_id="${{ github.event.comment.id }}"
 
+          # Wait a moment for the workflow to appear in the API
+          sleep 5
+          
+          # Get the workflow run ID (most recent run of this workflow)
+          WORKFLOW_ID=$(gh run list --workflow="$WORKFLOW_FILE" --limit 1 --json databaseId --jq '.[0].databaseId')
+          echo "workflow_id=$WORKFLOW_ID" >> $GITHUB_OUTPUT
+          echo "📝 Triggered workflow run ID: $WORKFLOW_ID"
+
           # Update the original comment with status
           ORIGINAL_BODY="${{ github.event.comment.body }}"
           cat > /tmp/comment.txt <<EOF
@@ -125,15 +137,55 @@ jobs:
           GH_TOKEN: ${{ github.token }}
 
   # ============================================
+  # Wait for Deployment to Complete
+  # ============================================
+  wait-for-deploy:
+    name: Wait for Deployment
+    runs-on: ubuntu-latest
+    needs: [parse, trigger-deploy]
+    if: |
+      needs.parse.outputs.action == 'deploy' &&
+      needs.trigger-deploy.outputs.workflow_id != ''
+    
+    outputs:
+      success: ${{ steps.wait.outputs.success }}
+
+    steps:
+      - name: Wait for deploy workflow to complete
+        id: wait
+        run: |
+          WORKFLOW_ID="${{ needs.trigger-deploy.outputs.workflow_id }}"
+          echo "⏳ Waiting for workflow run $WORKFLOW_ID to complete..."
+          
+          # Watch the workflow run (will block until completion)
+          gh run watch $WORKFLOW_ID --repo "${{ github.repository }}" || true
+          
+          # Get the conclusion
+          CONCLUSION=$(gh run view $WORKFLOW_ID --repo "${{ github.repository }}" --json conclusion --jq '.conclusion')
+          echo "📊 Workflow conclusion: $CONCLUSION"
+          
+          if [ "$CONCLUSION" = "success" ]; then
+            echo "success=true" >> $GITHUB_OUTPUT
+          else
+            echo "success=false" >> $GITHUB_OUTPUT
+          fi
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+  # ============================================
   # Trigger Testing
   # ============================================
   trigger-test:
     name: Trigger Testing
     runs-on: ubuntu-latest
-    needs: parse
+    needs: [parse, wait-for-deploy]
     if: |
+      always() &&
       needs.parse.outputs.valid == 'true' &&
-      needs.parse.outputs.action == 'test'
+      (
+        (needs.parse.outputs.action == 'test') ||
+        (needs.parse.outputs.action == 'deploy' && needs.wait-for-deploy.outputs.success == 'true')
+      )
 
     steps:
       - name: Remove stale labels and trigger workflow
