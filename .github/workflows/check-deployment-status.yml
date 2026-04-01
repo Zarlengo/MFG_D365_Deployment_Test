@@ -50,17 +50,46 @@ jobs:
           echo "$LABELS"
 
           # Check for required labels
-          HAS_QAT=$(echo "$LABELS" | grep -c "^tested:qat$" || true)
-          HAS_CRPTRN=$(echo "$LABELS" | grep -c "^tested:crptrn$" || true)
+          HAS_DEPLOYED_QAT=$(echo "$LABELS" | grep -c "^deployed:qat$" || true)
+          HAS_DEPLOYED_CRPTRN=$(echo "$LABELS" | grep -c "^deployed:crptrn$" || true)
+          HAS_TESTED_QAT=$(echo "$LABELS" | grep -c "^tested:qat$" || true)
+          HAS_TESTED_CRPTRN=$(echo "$LABELS" | grep -c "^tested:crptrn$" || true)
 
-          if [ "$HAS_QAT" -gt 0 ] && [ "$HAS_CRPTRN" -gt 0 ]; then
-            echo "has_required_labels=true" >> $GITHUB_OUTPUT
-            echo "✅ Both required labels present: tested:qat, tested:crptrn"
+          label_count=0
+          if [ "$HAS_DEPLOYED_QAT" -gt 0 ]; then
+            echo "✅ Deployed in QAT environment - label: deployed:qat"
+            label_count=$((label_count + 1))
           else
-            echo "has_required_labels=false" >> $GITHUB_OUTPUT
-            echo "❌ Missing required labels:"
-            [ "$HAS_QAT" -eq 0 ] && echo "  - tested:qat"
-            [ "$HAS_CRPTRN" -eq 0 ] && echo "  - tested:crptrn"
+            echo "❌ Missing deployment labels: deployed:qat"
+          fi
+
+          if [ "$HAS_TESTED_QAT" -gt 0 ]; then
+            echo "✅ Tested in QAT environment - label: tested:qat"
+            label_count=$((label_count + 1))
+          else
+            echo "❌ Missing required labels: tested:qat"
+          fi
+
+          if [ "$HAS_DEPLOYED_CRPTRN" -gt 0 ]; then
+            echo "✅ Deployed in CRPTRN environment - label: deployed:crptrn"
+            label_count=$((label_count + 1))
+          else
+            echo "❌ Missing deployment labels: deployed:crptrn"
+          fi
+
+          if [ "$HAS_TESTED_CRPTRN" -gt 0 ]; then
+            echo "✅ Tested in CRPTRN environment - label: tested:crptrn"
+            label_count=$((label_count + 1))
+          else
+            echo "❌ Missing required labels: tested:crptrn"
+          fi
+
+          if [ "$label_count" -eq 4 ]; then
+            echo "has_labels=true" >> $GITHUB_OUTPUT
+            echo "✅ All deployment and testing labels are present"
+          else
+            echo "has_labels=false" >> $GITHUB_OUTPUT
+            echo "❌ Missing deployment labels"
           fi
         env:
           GH_TOKEN: ${{ github.token }}
@@ -69,13 +98,13 @@ jobs:
         id: can_merge
         run: |
           HAS_METADATA="${{ steps.check_metadata.outputs.has_metadata_changes }}"
-          HAS_LABELS="${{ steps.check_labels.outputs.has_required_labels }}"
+          HAS_LABELS="${{ steps.check_labels.outputs.has_labels }}"
 
           echo "# Deployment Status Check" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
 
           if [ "$HAS_METADATA" = "false" ]; then
-            echo "✅ **No metadata changes detected** - deployment testing not required" >> $GITHUB_STEP_SUMMARY
+            echo "✅ **No metadata changes detected** - deployment and testing not required" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
             echo "This PR does not modify the \`/Metadata\` folder, so it can be merged without deployment testing." >> $GITHUB_STEP_SUMMARY
             echo "can_merge=true" >> $GITHUB_OUTPUT
@@ -83,36 +112,26 @@ jobs:
           fi
 
           if [ "$HAS_LABELS" = "true" ]; then
-            echo "✅ **All deployment requirements met**" >> $GITHUB_STEP_SUMMARY
+            echo "✅ **All deployment and testing requirements met**" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
+            echo "- ✅ Deployed in QAT (\`deployed:qat\`)" >> $GITHUB_STEP_SUMMARY
             echo "- ✅ Tested in QAT (\`tested:qat\`)" >> $GITHUB_STEP_SUMMARY
+            echo "- ✅ Deployed in CRPTRN (\`deployed:crptrn\`)" >> $GITHUB_STEP_SUMMARY
             echo "- ✅ Tested in CRPTRN (\`tested:crptrn\`)" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
             echo "This PR can be merged." >> $GITHUB_STEP_SUMMARY
             echo "can_merge=true" >> $GITHUB_OUTPUT
           else
-            echo "❌ **Deployment testing required**" >> $GITHUB_STEP_SUMMARY
+            echo "❌ **Deployment and testing required**" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
-            echo "This PR modifies the \`/Metadata\` folder and must be tested in QAT and CRPTRN before merging." >> $GITHUB_STEP_SUMMARY
+            echo "This PR modifies the \`/Metadata\` folder and must be deployed and tested in QAT and CRPTRN before merging." >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
             echo "### Required Labels" >> $GITHUB_STEP_SUMMARY
-            
-            # Check which labels are missing
-            LABELS=$(gh pr view ${{ github.event.pull_request.number }} --json labels --jq '.labels[].name')
-            HAS_QAT=$(echo "$LABELS" | grep -c "^tested:qat$" || true)
-            HAS_CRPTRN=$(echo "$LABELS" | grep -c "^tested:crptrn$" || true)
-            
-            if [ "$HAS_QAT" -eq 0 ]; then
-              echo "- ❌ \`tested:qat\` - Deploy and test in QAT with \`/deploy qat\`" >> $GITHUB_STEP_SUMMARY
-            else
-              echo "- ✅ \`tested:qat\`" >> $GITHUB_STEP_SUMMARY
-            fi
-            
-            if [ "$HAS_CRPTRN" -eq 0 ]; then
-              echo "- ❌ \`tested:crptrn\` - Deploy and test in CRPTRN with \`/deploy crptrn\`" >> $GITHUB_STEP_SUMMARY
-            else
-              echo "- ✅ \`tested:crptrn\`" >> $GITHUB_STEP_SUMMARY
-            fi
+
+            echo "- $QAT_DEPLOYED_STATUS Deployed in QAT (\`deployed:qat\`)" >> $GITHUB_STEP_SUMMARY
+            echo "- $QAT_TESTED_STATUS Tested in QAT (\`tested:qat\`)" >> $GITHUB_STEP_SUMMARY
+            echo "- $CRPTRN_DEPLOYED_STATUS Deployed in CRPTRN (\`deployed:crptrn\`)" >> $GITHUB_STEP_SUMMARY
+            echo "- $CRPTRN_TESTED_STATUS Tested in CRPTRN (\`tested:crptrn\`)" >> $GITHUB_STEP_SUMMARY
             
             echo "" >> $GITHUB_STEP_SUMMARY
             echo "### How to Deploy" >> $GITHUB_STEP_SUMMARY
@@ -140,22 +159,35 @@ jobs:
             | head -1)
 
           # Check current label status
-          HAS_QAT=$(gh pr view ${{ github.event.pull_request.number }} --json labels --jq '.labels[].name' | grep -c "^tested:qat$" || true)
-          HAS_CRPTRN=$(gh pr view ${{ github.event.pull_request.number }} --json labels --jq '.labels[].name' | grep -c "^tested:crptrn$" || true)
+          HAS_DEPLOYED_QAT=$(gh pr view ${{ github.event.pull_request.number }} --json labels --jq '.labels[].name' | grep -c "^deployed:qat$" || true)
+          HAS_TESTED_QAT=$(gh pr view ${{ github.event.pull_request.number }} --json labels --jq '.labels[].name' | grep -c "^tested:qat$" || true)
+          HAS_DEPLOYED_CRPTRN=$(gh pr view ${{ github.event.pull_request.number }} --json labels --jq '.labels[].name' | grep -c "^deployed:crptrn$" || true)
+          HAS_TESTED_CRPTRN=$(gh pr view ${{ github.event.pull_request.number }} --json labels --jq '.labels[].name' | grep -c "^tested:crptrn$" || true)
 
-          QAT_STATUS="❌"
-          CRPTRN_STATUS="❌"
-          [ "$HAS_QAT" -gt 0 ] && QAT_STATUS="✅"
-          [ "$HAS_CRPTRN" -gt 0 ] && CRPTRN_STATUS="✅"
+          QAT_DEPLOYED_STATUS="❌"
+          [ "$HAS_DEPLOYED_QAT" -gt 0 ] && QAT_DEPLOYED_STATUS="✅"
+
+          CRPTRN_DEPLOYED_STATUS="❌"
+          [ "$HAS_DEPLOYED_CRPTRN" -gt 0 ] && CRPTRN_DEPLOYED_STATUS="✅"
+
+          QAT_TESTED_STATUS="❌"
+          [ "$HAS_TESTED_QAT" -gt 0 ] && QAT_TESTED_STATUS="✅"
+
+          CRPTRN_TESTED_STATUS="❌"
+          [ "$HAS_TESTED_CRPTRN" -gt 0 ] && CRPTRN_TESTED_STATUS="✅"
 
           cat > /tmp/comment.md <<EOF
           ## 🚨 Deployment Status Check
 
-          This PR modifies the \`/Metadata\` folder and requires deployment testing before merging.
+          This PR modifies the \`/Metadata\` folder and requires deployment and testing before merging.
+
+          ### Required Deployment
+          - $QAT_DEPLOYED_STATUS **QAT** - \`deployed:qat\`
+          - $CRPTRN_DEPLOYED_STATUS **CRPTRN** - \`deployed:crptrn\`
 
           ### Required Testing
-          - $QAT_STATUS **QAT** - \`tested:qat\`
-          - $CRPTRN_STATUS **CRPTRN** - \`tested:crptrn\`
+          - $QAT_TESTED_STATUS **QAT** - \`tested:qat\`
+          - $CRPTRN_TESTED_STATUS **CRPTRN** - \`tested:crptrn\`
 
           ### How to Deploy
           Comment on this PR with:
