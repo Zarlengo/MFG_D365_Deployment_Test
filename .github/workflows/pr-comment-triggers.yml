@@ -84,6 +84,9 @@ jobs:
       workflow_id: ${{ steps.trigger.outputs.workflow_id }}
 
     steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
       - name: Remove stale labels and trigger workflow
         id: trigger
         run: |
@@ -200,6 +203,9 @@ jobs:
       )
 
     steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
       - name: Remove stale labels and trigger workflow
         id: trigger
         run: |
