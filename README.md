@@ -33,18 +33,18 @@ See [.github/workflows/README.md](.github/workflows/README.md) for complete docu
 
 ### 2. Label restrictions
 
-These tests should show label's being automatically removed
+These tests should show label's being automatically removed and a comment added about the restriction
 
 1. Create a change in Metadata folder on a branch
 2. Create a PR with that branch
 3. Add a manual label to the PR of any text
-4. Add a label of:
-   - [ ] `deployed:adt`
-   - [ ] `deployed:qat`
-   - [ ] `deployed:crptrn`
-   - [ ] `tested:adt`
-   - [ ] `tested:qat`
-   - [ ] `tested:crptrn`
+4. Add a label of any of the following:
+   - `deployed:adt`
+   - `deployed:qat`
+   - `deployed:crptrn`
+   - `tested:adt`
+   - `tested:qat`
+   - `tested:crptrn`
 
 ### 3. Documentation flow
 

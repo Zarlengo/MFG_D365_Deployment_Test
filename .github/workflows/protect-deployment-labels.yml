@@ -22,30 +22,59 @@ jobs:
             exit 0
           fi
 
-          # Remove manually-added labels
-          echo "❌ Labels can only be added by automation"
-          echo "Removing label: ${{ github.event.label.name }}"
+          # Check if this is a specific deployment/testing label
+          LABEL_NAME="${{ github.event.label.name }}"
+
+          # Default message for unknown labels
+          SPECIFIC_MESSAGE="**To trigger deployments/tests:**
+          - Use PR comments: \`/deploy adt\`, \`/test qat\`, etc."
+
+          # Override with specific message if it's one of the known labels
+          case "$LABEL_NAME" in
+            "deployed:adt")
+              SPECIFIC_MESSAGE="**To deploy to ADT, use the PR comment: \`/deploy adt\`**"
+              ;;
+            "deployed:qat")
+              SPECIFIC_MESSAGE="**To deploy to QAT, use the PR comment: \`/deploy qat\`**"
+              ;;
+            "deployed:crptrn")
+              SPECIFIC_MESSAGE="**To deploy to CRPTRN, use the PR comment: \`/deploy crptrn\`**"
+              ;;
+            "tested:adt")
+              SPECIFIC_MESSAGE="**To test in ADT, use the PR comment: \`/test adt\`**"
+              ;;
+            "tested:qat")
+              SPECIFIC_MESSAGE="**To test in QAT, use the PR comment: \`/test qat\`**"
+              ;;
+            "tested:crptrn")
+              SPECIFIC_MESSAGE="**To test in CRPTRN, use the PR comment: \`/test crptrn\`**"
+              ;;
+          esac
+
+          # Remove the label
+          echo "❌ Removing manually-added label: $LABEL_NAME"
 
           gh pr edit ${{ github.event.pull_request.number }} \
-            --remove-label "${{ github.event.label.name }}" \
+            --remove-label "$LABEL_NAME" \
             --repo "${{ github.repository }}"
 
+          # Post comment with appropriate message
           cat > /tmp/comment.txt <<EOF
-          ⚠️ **Labels are protected**
+          ⚠️ **Label removed**
 
-          The label \`${{ github.event.label.name }}\` was automatically removed.
+          The label \`$LABEL_NAME\` was automatically removed.
 
           Deployment and testing status labels are managed by automation and cannot be manually applied.
 
-          **To trigger deployments/tests:**
-          - Use PR comments: \`/deploy adt\`, \`/test qat\`, etc.
-          - Status labels will be auto-added on success
+          $SPECIFIC_MESSAGE
+
+          The label will be automatically added when the deployment/test completes successfully.
           EOF
 
           gh pr comment ${{ github.event.pull_request.number }} \
             --repo "${{ github.repository }}" \
             --body-file /tmp/comment.txt
 
-          echo "✅ Protected label removed successfully"
+          echo "✅ Label removed successfully"
         env:
           GH_TOKEN: ${{ github.token }}
