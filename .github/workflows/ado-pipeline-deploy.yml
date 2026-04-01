@@ -79,8 +79,9 @@ jobs:
             # Get the current comment body
             CURRENT_BODY=$(gh api "/repos/${{ github.repository }}/issues/comments/${{ github.event.inputs.comment_id }}" --jq '.body')
             
-            # Remove the "Deployment triggered" section if it exists (we're replacing it with results)
-            UPDATED_BODY=$(echo "$CURRENT_BODY" | sed '/🚀 \*\*Deployment triggered/,/\[View workflow runs →\]/d')
+            # Remove the "Deployment triggered" section (multiline block)
+            # Using perl for multiline regex matching
+            UPDATED_BODY=$(echo "$CURRENT_BODY" | perl -0pe 's/\n+---\n+🚀 \*\*Deployment triggered.*?\[View workflow runs →\]\)//s')
             
             cat > /tmp/comment.txt <<EOF
           $UPDATED_BODY
@@ -122,8 +123,8 @@ jobs:
           # Get the current comment body
           CURRENT_BODY=$(gh api "/repos/${{ github.repository }}/issues/comments/${{ github.event.inputs.comment_id }}" --jq '.body')
           
-          # Remove the "Deployment triggered" section if it exists (we're replacing it with failure)
-          UPDATED_BODY=$(echo "$CURRENT_BODY" | sed '/🚀 \*\*Deployment triggered/,/\[View workflow runs →\]/d')
+          # Remove the "Deployment triggered" section (multiline block including preceding ---)
+          UPDATED_BODY=$(echo "$CURRENT_BODY" | perl -0pe 's/\n+---\n+🚀 \*\*Deployment triggered.*?\[View workflow runs →\]\)//s')
           
           cat > /tmp/comment.txt <<EOF
           $UPDATED_BODY
