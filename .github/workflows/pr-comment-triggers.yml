@@ -20,7 +20,7 @@ jobs:
     if: |
       github.event.issue.pull_request &&
       (startsWith(github.event.comment.body, '/deploy') || startsWith(github.event.comment.body, '/test'))
-    
+
     outputs:
       valid: ${{ steps.parse.outputs.valid }}
       action: ${{ steps.parse.outputs.action }}
@@ -75,7 +75,7 @@ jobs:
     if: |
       needs.parse.outputs.valid == 'true' &&
       needs.parse.outputs.action == 'deploy'
-    
+
     outputs:
       workflow_id: ${{ steps.trigger.outputs.workflow_id }}
 
@@ -108,7 +108,7 @@ jobs:
 
           # Wait a moment for the workflow to appear in the API
           sleep 5
-          
+
           # Get the workflow run ID (most recent run of this workflow)
           WORKFLOW_ID=$(gh run list --repo "${{ github.repository }}" --workflow="$WORKFLOW_FILE" --limit 1 --json databaseId --jq '.[0].databaseId')
           echo "workflow_id=$WORKFLOW_ID" >> $GITHUB_OUTPUT
@@ -120,10 +120,8 @@ jobs:
           $ORIGINAL_BODY
 
           ---
-          🚀 **$ACTION_TEXT triggered by @${{ github.event.comment.user.login }}**
 
-          **Action:** \`$ACTION\`
-          **Environment:** \`$ENV\`
+          🚀 **$ACTION_TEXT triggered for \`$ENV\`**
 
           [View workflow runs →](${{ github.server_url }}/${{ github.repository }}/actions/workflows/$WORKFLOW_FILE)
           EOF
@@ -146,7 +144,7 @@ jobs:
     if: |
       needs.parse.outputs.action == 'deploy' &&
       needs.trigger-deploy.outputs.workflow_id != ''
-    
+
     outputs:
       success: ${{ steps.wait.outputs.success }}
 
@@ -156,14 +154,14 @@ jobs:
         run: |
           WORKFLOW_ID="${{ needs.trigger-deploy.outputs.workflow_id }}"
           echo "⏳ Waiting for workflow run $WORKFLOW_ID to complete..."
-          
+
           # Watch the workflow run (will block until completion)
           gh run watch $WORKFLOW_ID --repo "${{ github.repository }}" || true
-          
+
           # Get the conclusion
           CONCLUSION=$(gh run view $WORKFLOW_ID --repo "${{ github.repository }}" --json conclusion --jq '.conclusion')
           echo "📊 Workflow conclusion: $CONCLUSION"
-          
+
           if [ "$CONCLUSION" = "success" ]; then
             echo "success=true" >> $GITHUB_OUTPUT
           else
@@ -209,21 +207,18 @@ jobs:
             -f environment="$ENV" \
             -f triggered_by="${{ github.event.comment.user.login }}" \
             -f comment_id="${{ github.event.comment.id }}"
-          
+
           # Update the original comment with testing triggered status
           # Sleep to ensure we get latest comment (after deploy might have updated it)
           sleep 2
           ORIGINAL_BODY=$(gh api "/repos/${{ github.repository }}/issues/comments/${{ github.event.comment.id }}" --jq '.body')
-          
+
           cat > /tmp/comment.txt <<EOF
           $ORIGINAL_BODY
 
           ---
 
-          🚀 **$ACTION_TEXT triggered by @${{ github.event.comment.user.login }}**
-
-          **Action:** \`$ACTION\`
-          **Environment:** \`$ENV\`
+          🚀 **$ACTION_TEXT triggered for \`$ENV\`**
 
           [View workflow runs →](${{ github.server_url }}/${{ github.repository }}/actions/workflows/$WORKFLOW_FILE)
           EOF
@@ -233,7 +228,7 @@ jobs:
             -H "Accept: application/vnd.github+json" \
             "/repos/${{ github.repository }}/issues/comments/${{ github.event.comment.id }}" \
             -f body="$(cat /tmp/comment.txt)"
-          
+
           echo "✅ Test workflow triggered for $ENV environment"
         env:
           GH_TOKEN: ${{ github.token }}
