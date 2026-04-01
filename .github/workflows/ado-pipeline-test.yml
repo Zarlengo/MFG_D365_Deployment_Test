@@ -20,6 +20,10 @@ on:
         description: "User who triggered this (for audit trail)"
         required: false
         type: string
+      comment_id:
+        description: "Comment ID to update with results"
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -71,17 +75,28 @@ jobs:
             --repo "${{ github.repository }}" \
             --add-label "tested:$ENV"
           
-          cat > /tmp/comment.txt <<EOF
+          # Update the original comment if comment_id provided
+          if [ -n "${{ github.event.inputs.comment_id }}" ]; then
+            # Get the current comment body
+            CURRENT_BODY=$(gh api "/repos/${{ github.repository }}/issues/comments/${{ github.event.inputs.comment_id }}" --jq '.body')
+            
+            cat > /tmp/comment.txt <<EOF
+          $CURRENT_BODY
+
           ✅ **$ENV_UPPER Testing Complete**
           
           - ✅ Tests passed in $ENV_UPPER
+          - 🏷️ Label \`tested:$ENV\` added
           
           [View workflow run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
           EOF
-          
-          gh pr comment ${{ github.event.inputs.pr_number }} \
-            --repo "${{ github.repository }}" \
-            --body-file /tmp/comment.txt
+            
+            gh api \
+              --method PATCH \
+              -H "Accept: application/vnd.github+json" \
+              "/repos/${{ github.repository }}/issues/comments/${{ github.event.inputs.comment_id }}" \
+              -f body="$(cat /tmp/comment.txt)"
+          fi
         env:
           GH_TOKEN: ${{ github.token }}
 
