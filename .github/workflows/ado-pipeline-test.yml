@@ -1,0 +1,114 @@
+name: Test Environment
+
+on:
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: "PR number to label (leave empty to skip labeling)"
+        required: false
+        type: string
+      environment:
+        description: "Environment to test"
+        required: true
+        type: choice
+        options:
+          - "adt"
+          - "qat"
+          - "crptrn"
+        default: "qat"
+      triggered_by:
+        description: "User who triggered this (for audit trail)"
+        required: false
+        type: string
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  test:
+    name: Test in ${{ github.event.inputs.environment }}
+    runs-on: ubuntu-latest
+    outputs:
+      test_status: ${{ steps.test.outcome }}
+
+    steps:
+      - name: Simulate Testing
+        id: test
+        run: |
+          ENV_UPPER=$(echo "${{ github.event.inputs.environment }}" | tr '[:lower:]' '[:upper:]')
+          echo "🧪 Starting tests in $ENV_UPPER environment..."
+          echo "⏳ Running test suite..."
+          sleep 30
+
+          # 50% random failure
+          if [ $((RANDOM % 2)) -eq 0 ]; then
+            echo "✅ $ENV_UPPER tests passed"
+            echo "status=success" >> $GITHUB_OUTPUT
+          else
+            echo "❌ $ENV_UPPER tests failed"
+            exit 1
+          fi
+
+  label:
+    name: Label Success
+    runs-on: ubuntu-latest
+    needs: test
+    if: |
+      always() &&
+      needs.test.result == 'success' &&
+      github.event.inputs.pr_number != ''
+
+    steps:
+      - name: Add test label
+        run: |
+          ENV="${{ github.event.inputs.environment }}"
+          ENV_UPPER=$(echo "$ENV" | tr '[:lower:]' '[:upper:]')
+          
+          echo "🏷️ Adding $ENV_UPPER test label to PR #${{ github.event.inputs.pr_number }}"
+          
+          gh pr edit ${{ github.event.inputs.pr_number }} \
+            --repo "${{ github.repository }}" \
+            --add-label "tested:$ENV"
+          
+          cat > /tmp/comment.txt <<EOF
+          ✅ **$ENV_UPPER Testing Complete**
+          
+          - ✅ Tests passed in $ENV_UPPER
+          
+          [View workflow run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
+          EOF
+          
+          gh pr comment ${{ github.event.inputs.pr_number }} \
+            --repo "${{ github.repository }}" \
+            --body-file /tmp/comment.txt
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+  summary:
+    name: Testing Summary
+    runs-on: ubuntu-latest
+    needs: [test, label]
+    if: always()
+
+    steps:
+      - name: Generate Summary
+        run: |
+          ENV="${{ github.event.inputs.environment }}"
+          ENV_UPPER=$(echo "$ENV" | tr '[:lower:]' '[:upper:]')
+          
+          echo "# Testing Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Environment:** $ENV_UPPER" >> $GITHUB_STEP_SUMMARY
+          if [ -n "${{ github.event.inputs.triggered_by }}" ]; then
+            echo "**Triggered by:** @${{ github.event.inputs.triggered_by }}" >> $GITHUB_STEP_SUMMARY
+          fi
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "## Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          if [ "${{ needs.test.result }}" = "success" ]; then
+            echo "- ✅ Testing: Success" >> $GITHUB_STEP_SUMMARY
+          elif [ "${{ needs.test.result }}" = "failure" ]; then
+            echo "- ❌ Testing: Failed" >> $GITHUB_STEP_SUMMARY
+          fi

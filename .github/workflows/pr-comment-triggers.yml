@@ -1,29 +1,8 @@
-name: PR Deployment Triggers
+name: PR Comment Triggers
 
 on:
   issue_comment:
     types: [created]
-  workflow_dispatch:
-    inputs:
-      pr_number:
-        description: 'PR number'
-        required: true
-        type: string
-      environment:
-        description: 'Environment to deploy/test'
-        required: true
-        type: choice
-        options:
-          - 'adt'
-          - 'qat'
-          - 'crptrn'
-      mode:
-        description: 'Action to perform'
-        required: true
-        type: choice
-        options:
-          - 'deploy'
-          - 'test'
 
 permissions:
   contents: read
@@ -32,47 +11,12 @@ permissions:
 
 jobs:
   # ============================================
-  # Handle Manual Trigger
-  # ============================================
-  handle-manual:
-    name: Manual Deployment Trigger
-    runs-on: ubuntu-latest
-    if: github.event_name == 'workflow_dispatch'
-    
-    steps:
-      - name: Trigger deployment workflow
-        run: |
-          gh workflow run deploy-test-environments.yml \
-            --repo "${{ github.repository }}" \
-            --ref "${{ github.event.repository.default_branch }}" \
-            -f pr_number="${{ github.event.inputs.pr_number }}" \
-            -f environment="${{ github.event.inputs.environment }}" \
-            -f mode="${{ github.event.inputs.mode }}" \
-            -f triggered_by="${{ github.actor }}"
-          
-          cat > /tmp/comment.txt <<EOF
-          🚀 **Deployment triggered by @${{ github.actor }}** (manual)
-          
-          **Action:** \`${{ github.event.inputs.mode }}\`
-          **Environment:** \`${{ github.event.inputs.environment }}\`
-          
-          [View workflow runs →](${{ github.server_url }}/${{ github.repository }}/actions/workflows/deploy-test-environments.yml)
-          EOF
-          
-          gh pr comment ${{ github.event.inputs.pr_number }} \
-            --repo "${{ github.repository }}" \
-            --body-file /tmp/comment.txt
-        env:
-          GH_TOKEN: ${{ github.token }}
-
-  # ============================================
   # Handle PR Comments (/deploy, /test)
   # ============================================
   handle-comment:
     name: Parse Deployment Command
     runs-on: ubuntu-latest
     if: |
-      github.event_name == 'issue_comment' &&
       github.event.issue.pull_request &&
       (startsWith(github.event.comment.body, '/deploy') || startsWith(github.event.comment.body, '/test'))
     
@@ -115,24 +59,35 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
       
-      - name: Trigger deployment workflow
+      - name: Trigger workflow
         if: steps.parse.outputs.valid == 'true'
         run: |
-          gh workflow run deploy-test-environments.yml \
+          ACTION="${{ steps.parse.outputs.action }}"
+          ENV="${{ steps.parse.outputs.environment }}"
+          
+          # Choose workflow based on action
+          if [ "$ACTION" = "deploy" ]; then
+            WORKFLOW_FILE="ado-pipeline-deploy.yml"
+            ACTION_TEXT="Deployment & Testing"
+          else
+            WORKFLOW_FILE="ado-pipeline-test.yml"
+            ACTION_TEXT="Testing"
+          fi
+          
+          gh workflow run "$WORKFLOW_FILE" \
             --repo "${{ github.repository }}" \
             --ref "${{ github.event.repository.default_branch }}" \
             -f pr_number="${{ github.event.issue.number }}" \
-            -f environment="${{ steps.parse.outputs.environment }}" \
-            -f mode="${{ steps.parse.outputs.action }}" \
+            -f environment="$ENV" \
             -f triggered_by="${{ github.event.comment.user.login }}"
           
           cat > /tmp/comment.txt <<EOF
-          🚀 **Deployment triggered by @${{ github.event.comment.user.login }}**
+          🚀 **$ACTION_TEXT triggered by @${{ github.event.comment.user.login }}**
           
-          **Action:** \`${{ steps.parse.outputs.action }}\`
-          **Environment:** \`${{ steps.parse.outputs.environment }}\`
+          **Action:** \`$ACTION\`
+          **Environment:** \`$ENV\`
           
-          [View workflow runs →](${{ github.server_url }}/${{ github.repository }}/actions/workflows/deploy-test-environments.yml)
+          [View workflow runs →](${{ github.server_url }}/${{ github.repository }}/actions/workflows/$WORKFLOW_FILE)
           EOF
           
           gh pr comment ${{ github.event.issue.number }} \

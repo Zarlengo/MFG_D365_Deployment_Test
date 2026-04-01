@@ -1,4 +1,4 @@
-name: Deploy & Test Environments
+name: Deploy to Environment
 
 on:
   workflow_dispatch:
@@ -8,7 +8,7 @@ on:
         required: false
         type: string
       environment:
-        description: 'Environment to deploy/test'
+        description: 'Environment to deploy'
         required: true
         type: choice
         options:
@@ -16,14 +16,6 @@ on:
           - 'qat'
           - 'crptrn'
         default: 'qat'
-      mode:
-        description: 'Action to perform'
-        required: true
-        type: choice
-        options:
-          - 'deploy'
-          - 'test'
-        default: 'deploy'
       triggered_by:
         description: 'User who triggered this (for audit trail)'
         required: false
@@ -40,9 +32,7 @@ jobs:
   deploy-adt:
     name: Deploy to ADT
     runs-on: ubuntu-latest
-    if: |
-      github.event.inputs.environment == 'adt' &&
-      github.event.inputs.mode == 'deploy'
+    if: github.event.inputs.environment == 'adt'
     outputs:
       deployment_status: ${{ steps.deploy.outcome }}
       
@@ -70,7 +60,7 @@ jobs:
     if: |
       always() &&
       github.event.inputs.environment == 'adt' &&
-      (github.event.inputs.mode == 'test' || needs.deploy-adt.result == 'success')
+      needs.deploy-adt.result == 'success'
     outputs:
       test_status: ${{ steps.test.outcome }}
       
@@ -106,20 +96,11 @@ jobs:
         run: |
           echo "🏷️ Adding ADT success labels to PR #${{ github.event.inputs.pr_number }}"
           
-          LABELS="tested:adt"
-          MESSAGE="- ✅ Tests passed in ADT"
-          
-          # Only add deployed label if we actually deployed (not test-only mode)
-          if [ "${{ github.event.inputs.mode }}" = "deploy" ]; then
-            LABELS="deployed:adt,tested:adt"
-          fi
-          
           gh pr edit ${{ github.event.inputs.pr_number }} \
             --repo "${{ github.repository }}" \
-            --add-label "$LABELS"
+            --add-label "deployed:adt,tested:adt"
           
-          if [ "${{ github.event.inputs.mode }}" = "deploy" ]; then
-            cat > /tmp/comment.txt <<EOF
+          cat > /tmp/comment.txt <<EOF
           ✅ **ADT Deployment & Testing Complete**
           
           - ✅ Deployed to ADT
@@ -127,15 +108,6 @@ jobs:
           
           [View workflow run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
           EOF
-          else
-            cat > /tmp/comment.txt <<EOF
-          ✅ **ADT Testing Complete**
-          
-          - ✅ Tests passed in ADT
-          
-          [View workflow run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
-          EOF
-          fi
           
           gh pr comment ${{ github.event.inputs.pr_number }} \
             --repo "${{ github.repository }}" \
@@ -149,9 +121,7 @@ jobs:
   deploy-qat:
     name: Deploy to QAT
     runs-on: ubuntu-latest
-    if: |
-      github.event.inputs.environment == 'qat' &&
-      github.event.inputs.mode == 'deploy'
+    if: github.event.inputs.environment == 'qat'
     outputs:
       deployment_status: ${{ steps.deploy.outcome }}
       
@@ -179,7 +149,7 @@ jobs:
     if: |
       always() &&
       github.event.inputs.environment == 'qat' &&
-      (github.event.inputs.mode == 'test' || needs.deploy-qat.result == 'success')
+      needs.deploy-qat.result == 'success'
     outputs:
       test_status: ${{ steps.test.outcome }}
       
@@ -215,19 +185,11 @@ jobs:
         run: |
           echo "🏷️ Adding QAT success labels to PR #${{ github.event.inputs.pr_number }}"
           
-          LABELS="tested:qat"
-          
-          # Only add deployed label if we actually deployed (not test-only mode)
-          if [ "${{ github.event.inputs.mode }}" = "deploy" ]; then
-            LABELS="deployed:qat,tested:qat"
-          fi
-          
           gh pr edit ${{ github.event.inputs.pr_number }} \
             --repo "${{ github.repository }}" \
-            --add-label "$LABELS"
+            --add-label "deployed:qat,tested:qat"
           
-          if [ "${{ github.event.inputs.mode }}" = "deploy" ]; then
-            cat > /tmp/comment.txt <<EOF
+          cat > /tmp/comment.txt <<EOF
           ✅ **QAT Deployment & Testing Complete**
           
           - ✅ Deployed to QAT
@@ -235,15 +197,6 @@ jobs:
           
           [View workflow run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
           EOF
-          else
-            cat > /tmp/comment.txt <<EOF
-          ✅ **QAT Testing Complete**
-          
-          - ✅ Tests passed in QAT
-          
-          [View workflow run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
-          EOF
-          fi
           
           gh pr comment ${{ github.event.inputs.pr_number }} \
             --repo "${{ github.repository }}" \
@@ -257,9 +210,7 @@ jobs:
   deploy-crptrn:
     name: Deploy to CRPTRN
     runs-on: ubuntu-latest
-    if: |
-      github.event.inputs.environment == 'crptrn' &&
-      github.event.inputs.mode == 'deploy'
+    if: github.event.inputs.environment == 'crptrn'
     outputs:
       deployment_status: ${{ steps.deploy.outcome }}
       
@@ -287,7 +238,7 @@ jobs:
     if: |
       always() &&
       github.event.inputs.environment == 'crptrn' &&
-      (github.event.inputs.mode == 'test' || needs.deploy-crptrn.result == 'success')
+      needs.deploy-crptrn.result == 'success'
     outputs:
       test_status: ${{ steps.test.outcome }}
       
@@ -323,19 +274,11 @@ jobs:
         run: |
           echo "🏷️ Adding CRPTRN success labels to PR #${{ github.event.inputs.pr_number }}"
           
-          LABELS="tested:crptrn"
-          
-          # Only add deployed label if we actually deployed (not test-only mode)
-          if [ "${{ github.event.inputs.mode }}" = "deploy" ]; then
-            LABELS="deployed:crptrn,tested:crptrn"
-          fi
-          
           gh pr edit ${{ github.event.inputs.pr_number }} \
             --repo "${{ github.repository }}" \
-            --add-label "$LABELS"
+            --add-label "deployed:crptrn,tested:crptrn"
           
-          if [ "${{ github.event.inputs.mode }}" = "deploy" ]; then
-            cat > /tmp/comment.txt <<EOF
+          cat > /tmp/comment.txt <<EOF
           ✅ **CRPTRN Deployment & Testing Complete**
           
           - ✅ Deployed to CRPTRN
@@ -343,15 +286,6 @@ jobs:
           
           [View workflow run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
           EOF
-          else
-            cat > /tmp/comment.txt <<EOF
-          ✅ **CRPTRN Testing Complete**
-          
-          - ✅ Tests passed in CRPTRN
-          
-          [View workflow run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
-          EOF
-          fi
           
           gh pr comment ${{ github.event.inputs.pr_number }} \
             --repo "${{ github.repository }}" \
@@ -374,7 +308,6 @@ jobs:
           echo "# Deployment & Testing Summary" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Environment:** ${{ github.event.inputs.environment }}" >> $GITHUB_STEP_SUMMARY
-          echo "**Mode:** ${{ github.event.inputs.mode }}" >> $GITHUB_STEP_SUMMARY
           if [ -n "${{ github.event.inputs.triggered_by }}" ]; then
             echo "**Triggered by:** @${{ github.event.inputs.triggered_by }}" >> $GITHUB_STEP_SUMMARY
           fi
@@ -382,20 +315,15 @@ jobs:
           echo "## Results" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           
-          # Only show summary for the selected environment
           ENV="${{ github.event.inputs.environment }}"
           
           if [ "$ENV" = "adt" ]; then
             echo "### ADT Environment" >> $GITHUB_STEP_SUMMARY
-          
             if [ "${{ needs.deploy-adt.result }}" = "success" ]; then
               echo "- ✅ Deployment: Success" >> $GITHUB_STEP_SUMMARY
             elif [ "${{ needs.deploy-adt.result }}" = "failure" ]; then
               echo "- ❌ Deployment: Failed" >> $GITHUB_STEP_SUMMARY
-            elif [ "${{ needs.deploy-adt.result }}" = "skipped" ]; then
-              echo "- ⏭️ Deployment: Skipped (test-only mode)" >> $GITHUB_STEP_SUMMARY
             fi
-            
             if [ "${{ needs.test-adt.result }}" = "success" ]; then
               echo "- ✅ Testing: Success" >> $GITHUB_STEP_SUMMARY
             elif [ "${{ needs.test-adt.result }}" = "failure" ]; then
@@ -405,15 +333,11 @@ jobs:
             fi
           elif [ "$ENV" = "qat" ]; then
             echo "### QAT Environment" >> $GITHUB_STEP_SUMMARY
-            
             if [ "${{ needs.deploy-qat.result }}" = "success" ]; then
               echo "- ✅ Deployment: Success" >> $GITHUB_STEP_SUMMARY
             elif [ "${{ needs.deploy-qat.result }}" = "failure" ]; then
               echo "- ❌ Deployment: Failed" >> $GITHUB_STEP_SUMMARY
-            elif [ "${{ needs.deploy-qat.result }}" = "skipped" ]; then
-              echo "- ⏭️ Deployment: Skipped (test-only mode)" >> $GITHUB_STEP_SUMMARY
             fi
-            
             if [ "${{ needs.test-qat.result }}" = "success" ]; then
               echo "- ✅ Testing: Success" >> $GITHUB_STEP_SUMMARY
             elif [ "${{ needs.test-qat.result }}" = "failure" ]; then
@@ -423,15 +347,11 @@ jobs:
             fi
           elif [ "$ENV" = "crptrn" ]; then
             echo "### CRPTRN Environment" >> $GITHUB_STEP_SUMMARY
-            
             if [ "${{ needs.deploy-crptrn.result }}" = "success" ]; then
               echo "- ✅ Deployment: Success" >> $GITHUB_STEP_SUMMARY
             elif [ "${{ needs.deploy-crptrn.result }}" = "failure" ]; then
               echo "- ❌ Deployment: Failed" >> $GITHUB_STEP_SUMMARY
-            elif [ "${{ needs.deploy-crptrn.result }}" = "skipped" ]; then
-              echo "- ⏭️ Deployment: Skipped (test-only mode)" >> $GITHUB_STEP_SUMMARY
             fi
-            
             if [ "${{ needs.test-crptrn.result }}" = "success" ]; then
               echo "- ✅ Testing: Success" >> $GITHUB_STEP_SUMMARY
             elif [ "${{ needs.test-crptrn.result }}" = "failure" ]; then
