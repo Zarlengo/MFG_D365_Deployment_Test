@@ -140,6 +140,7 @@ jobs:
   wait-for-deploy:
     name: Wait for Deployment
     runs-on: ubuntu-latest
+    timeout-minutes: 420  # 7 hours - longer than ADO's 6 hour limit
     needs: [parse, trigger-deploy]
     if: |
       needs.parse.outputs.action == 'deploy' &&
@@ -250,6 +251,7 @@ jobs:
   wait-for-test:
     name: Wait for Testing
     runs-on: ubuntu-latest
+    timeout-minutes: 420  # 7 hours - longer than ADO's 6 hour limit
     needs: [parse, trigger-test]
     if: |
       always() &&
