@@ -109,7 +109,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
 
       - name: Trigger testing workflow
-        if: steps.parse.outputs.valid == 'true' && steps.parse.outputs.action == 'test'
+        if: steps.parse.outputs.valid == 'true'
         run: |
           ACTION="${{ steps.parse.outputs.action }}"
           ENV="${{ steps.parse.outputs.environment }}"
