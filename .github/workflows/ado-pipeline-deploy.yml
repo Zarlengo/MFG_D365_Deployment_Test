@@ -99,6 +99,42 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
 
+  notify-failure:
+    name: Notify Deployment Failure
+    runs-on: ubuntu-latest
+    needs: [deploy]
+    if: |
+      always() &&
+      needs.deploy.result == 'failure' &&
+      github.event.inputs.comment_id != ''
+
+    steps:
+      - name: Update comment with failure
+        run: |
+          ENV="${{ github.event.inputs.environment }}"
+          ENV_UPPER=$(echo "$ENV" | tr '[:lower:]' '[:upper:]')
+          
+          # Get the current comment body
+          CURRENT_BODY=$(gh api "/repos/${{ github.repository }}/issues/comments/${{ github.event.inputs.comment_id }}" --jq '.body')
+          
+          cat > /tmp/comment.txt <<EOF
+          $CURRENT_BODY
+
+          ❌ **$ENV_UPPER Deployment Failed**
+          
+          - ❌ Deployment to $ENV_UPPER failed
+          
+          [View workflow run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
+          EOF
+          
+          gh api \
+            --method PATCH \
+            -H "Accept: application/vnd.github+json" \
+            "/repos/${{ github.repository }}/issues/comments/${{ github.event.inputs.comment_id }}" \
+            -f body="$(cat /tmp/comment.txt)"
+        env:
+          GH_TOKEN: ${{ github.token }}
+
   # ============================================
   # Summary Job
   # ============================================
