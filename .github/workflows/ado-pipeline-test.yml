@@ -42,7 +42,7 @@ jobs:
 
     steps:
       - name: Checkout PR branch
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ github.event.inputs.pr_branch }}
           fetch-depth: 0
@@ -78,13 +78,13 @@ jobs:
         run: |
           ENV="${{ github.event.inputs.environment }}"
           ENV_UPPER=$(echo "$ENV" | tr '[:lower:]' '[:upper:]')
-          
+
           echo "🏷️ Adding $ENV_UPPER test label to PR #${{ github.event.inputs.pr_number }}"
-          
+
           gh pr edit ${{ github.event.inputs.pr_number }} \
             --repo "${{ github.repository }}" \
             --add-label "tested:$ENV"
-          
+
           # Update the original comment if comment_id provided
           if [ -n "${{ github.event.inputs.comment_id }}" ]; then
             # Wait to ensure we get the latest comment (after trigger-test updated it)
@@ -127,10 +127,10 @@ jobs:
           ---
 
           ✅ **$ENV_UPPER Testing Complete**
-          
+
           - ✅ Tests passed in $ENV_UPPER
           - 🏷️ Label \`tested:$ENV\` added
-          
+
           [View workflow run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
           EOF
             
@@ -157,13 +157,13 @@ jobs:
         run: |
           ENV="${{ github.event.inputs.environment }}"
           ENV_UPPER=$(echo "$ENV" | tr '[:lower:]' '[:upper:]')
-          
+
           # Wait to ensure we get the latest comment (after trigger-test updated it)
           sleep 5
-          
+
           # Get the current comment body
           CURRENT_BODY=$(gh api "/repos/${{ github.repository }}/issues/comments/${{ github.event.inputs.comment_id }}" --jq '.body')
-          
+
           # Remove the "Testing triggered" section (multiline block including preceding ---)
           # Using a more robust approach with awk
           UPDATED_BODY=$(echo "$CURRENT_BODY" | awk '
@@ -192,19 +192,19 @@ jobs:
             skip && /View workflow runs/ { skip=0; next }
             !skip { print }
           ')
-          
+
           cat > /tmp/comment.txt <<EOF
           $UPDATED_BODY
 
           ---
 
           ❌ **$ENV_UPPER Testing Failed**
-          
+
           - ❌ Tests failed in $ENV_UPPER
-          
+
           [View workflow run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
           EOF
-          
+
           gh api \
             --method PATCH \
             -H "Accept: application/vnd.github+json" \
@@ -224,7 +224,7 @@ jobs:
         run: |
           ENV="${{ github.event.inputs.environment }}"
           ENV_UPPER=$(echo "$ENV" | tr '[:lower:]' '[:upper:]')
-          
+
           echo "# Testing Summary" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Environment:** $ENV_UPPER" >> $GITHUB_STEP_SUMMARY
@@ -234,7 +234,7 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "## Results" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          
+
           if [ "${{ needs.test.result }}" = "success" ]; then
             echo "- ✅ Testing: Success" >> $GITHUB_STEP_SUMMARY
           elif [ "${{ needs.test.result }}" = "failure" ]; then

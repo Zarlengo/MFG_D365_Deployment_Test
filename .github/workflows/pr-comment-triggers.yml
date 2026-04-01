@@ -151,7 +151,7 @@ jobs:
   wait-for-deploy:
     name: Wait for Deployment
     runs-on: ubuntu-latest
-    timeout-minutes: 420  # 7 hours - longer than ADO's 6 hour limit
+    timeout-minutes: 420 # 7 hours - longer than ADO's 6 hour limit
     needs: [parse, trigger-deploy]
     if: |
       needs.parse.outputs.action == 'deploy' &&
@@ -269,7 +269,7 @@ jobs:
   wait-for-test:
     name: Wait for Testing
     runs-on: ubuntu-latest
-    timeout-minutes: 480  # 8 hours - longer than ADO's 6 hour limit
+    timeout-minutes: 480 # 8 hours - longer than ADO's 6 hour limit
     needs: [parse, trigger-test]
     if: |
       always() &&
@@ -278,21 +278,21 @@ jobs:
     outputs:
       success: ${{ steps.wait.outputs.success }}
       workflow_id: ${{ needs.trigger-test.outputs.workflow_id }}
-    
+
     steps:
       - name: Wait for test workflow to complete
         id: wait
         run: |
           WORKFLOW_ID="${{ needs.trigger-test.outputs.workflow_id }}"
-          
+
           if [ -z "$WORKFLOW_ID" ]; then
             echo "❌ No workflow ID from trigger-test"
             echo "success=false" >> $GITHUB_OUTPUT
             exit 1
           fi
-          
+
           echo "⏳ Waiting for test workflow run $WORKFLOW_ID to complete..."
-          
+
           # Watch the workflow run (blocks until completion)
           if gh run watch "$WORKFLOW_ID" --repo "${{ github.repository }}" --exit-status; then
             echo "success=true" >> $GITHUB_OUTPUT
@@ -316,29 +316,29 @@ jobs:
       always() &&
       needs.parse.outputs.valid == 'true' &&
       (needs.parse.outputs.action == 'check' || needs.wait-for-test.result != 'skipped')
-    
+
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
       - name: Run deployment status check
         run: |
           PR_NUMBER="${{ github.event.issue.number }}"
-          
+
           echo "🔍 Checking deployment status for PR #$PR_NUMBER..."
-          
+
           # Get PR details including head SHA
           PR_DATA=$(gh pr view "$PR_NUMBER" --json headRefOid,baseRefOid --jq '.')
           HEAD_SHA=$(echo "$PR_DATA" | jq -r '.headRefOid')
           BASE_SHA=$(echo "$PR_DATA" | jq -r '.baseRefOid')
-          
+
           echo "PR Head SHA: $HEAD_SHA"
-          
+
           # Check for metadata changes
           METADATA_CHANGES=$(git diff --name-only "$BASE_SHA" "$HEAD_SHA" | grep '^Metadata/' || true)
-          
+
           if [ -z "$METADATA_CHANGES" ]; then
             echo "✅ No metadata changes - deployment not required"
             STATE="success"
@@ -371,7 +371,7 @@ jobs:
               DESCRIPTION="Missing labels: ${MISSING_LABELS[*]}"
             fi
           fi
-          
+
           # Create commit status check
           echo "📝 Creating commit status: $STATE"
           gh api \
@@ -381,7 +381,7 @@ jobs:
             -f state="$STATE" \
             -f description="$DESCRIPTION" \
             -f context="Verify Deployment Status"
-          
+
           echo "✅ Deployment check status created: $STATE"
         env:
           GH_TOKEN: ${{ github.token }}
