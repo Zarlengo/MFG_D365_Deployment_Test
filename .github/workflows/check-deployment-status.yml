@@ -3,6 +3,12 @@ name: Check Deployment Status
 on:
   pull_request:
     types: [labeled, unlabeled]
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: 'PR number to check'
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -19,12 +25,24 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Determine PR number
+        id: get_pr
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "pr_number=${{ github.event.inputs.pr_number }}" >> $GITHUB_OUTPUT
+          else
+            echo "pr_number=${{ github.event.pull_request.number }}" >> $GITHUB_OUTPUT
+          fi
+
       - name: Check for metadata changes
         id: check_metadata
         run: |
-          # Get the base branch (target of the PR)
-          BASE_SHA="${{ github.event.pull_request.base.sha }}"
-          HEAD_SHA="${{ github.event.pull_request.head.sha }}"
+          PR_NUMBER="${{ steps.get_pr.outputs.pr_number }}"
+          
+          # Get PR details
+          PR_DATA=$(gh pr view "$PR_NUMBER" --json baseRefOid,headRefOid --jq '.')
+          BASE_SHA=$(echo "$PR_DATA" | jq -r '.baseRefOid')
+          HEAD_SHA=$(echo "$PR_DATA" | jq -r '.headRefOid')
 
           echo "Checking for changes in /Metadata directory..."
 
@@ -39,12 +57,16 @@ jobs:
             echo "📦 Changes detected in /Metadata folder:"
             echo "$METADATA_CHANGES"
           fi
+        env:
+          GH_TOKEN: ${{ github.token }}
 
       - name: Check deployment labels
         id: check_labels
         run: |
+          PR_NUMBER="${{ steps.get_pr.outputs.pr_number }}"
+          
           # Get PR labels
-          LABELS=$(gh pr view ${{ github.event.pull_request.number }} --json labels --jq '.labels[].name')
+          LABELS=$(gh pr view "$PR_NUMBER" --json labels --jq '.labels[].name')
 
           echo "Current PR labels:"
           echo "$LABELS"
@@ -123,7 +145,8 @@ jobs:
             echo "can_merge=true" >> $GITHUB_OUTPUT
           else
             # Get label status for detailed reporting
-            LABELS=$(gh pr view ${{ github.event.pull_request.number }} --json labels --jq '.labels[].name')
+            PR_NUMBER="${{ steps.get_pr.outputs.pr_number }}"
+            LABELS=$(gh pr view "$PR_NUMBER" --json labels --jq '.labels[].name')
             
             QAT_DEPLOYED_STATUS="❌"
             [ $(echo "$LABELS" | grep -c "^deployed:qat$" || true) -gt 0 ] && QAT_DEPLOYED_STATUS="✅"
@@ -168,17 +191,19 @@ jobs:
           steps.check_metadata.outputs.has_metadata_changes == 'true' &&
           steps.check_labels.outputs.has_labels == 'false'
         run: |
+          PR_NUMBER="${{ steps.get_pr.outputs.pr_number }}"
+          
           # Check if we already posted a comment
-          EXISTING_COMMENT=$(gh pr view ${{ github.event.pull_request.number }} \
+          EXISTING_COMMENT=$(gh pr view "$PR_NUMBER" \
             --json comments \
             --jq '.comments[] | select(.author.login == "github-actions[bot]" and (.body | contains("Deployment Status Check"))) | .id' \
             | head -1)
 
           # Check current label status
-          HAS_DEPLOYED_QAT=$(gh pr view ${{ github.event.pull_request.number }} --json labels --jq '.labels[].name' | grep -c "^deployed:qat$" || true)
-          HAS_TESTED_QAT=$(gh pr view ${{ github.event.pull_request.number }} --json labels --jq '.labels[].name' | grep -c "^tested:qat$" || true)
-          HAS_DEPLOYED_CRPTRN=$(gh pr view ${{ github.event.pull_request.number }} --json labels --jq '.labels[].name' | grep -c "^deployed:crptrn$" || true)
-          HAS_TESTED_CRPTRN=$(gh pr view ${{ github.event.pull_request.number }} --json labels --jq '.labels[].name' | grep -c "^tested:crptrn$" || true)
+          HAS_DEPLOYED_QAT=$(gh pr view "$PR_NUMBER" --json labels --jq '.labels[].name' | grep -c "^deployed:qat$" || true)
+          HAS_TESTED_QAT=$(gh pr view "$PR_NUMBER" --json labels --jq '.labels[].name' | grep -c "^tested:qat$" || true)
+          HAS_DEPLOYED_CRPTRN=$(gh pr view "$PR_NUMBER" --json labels --jq '.labels[].name' | grep -c "^deployed:crptrn$" || true)
+          HAS_TESTED_CRPTRN=$(gh pr view "$PR_NUMBER" --json labels --jq '.labels[].name' | grep -c "^tested:crptrn$" || true)
 
           QAT_DEPLOYED_STATUS="❌"
           [ "$HAS_DEPLOYED_QAT" -gt 0 ] && QAT_DEPLOYED_STATUS="✅"
@@ -229,7 +254,7 @@ jobs:
               --input /tmp/comment.md
           else
             echo "Posting new comment..."
-            gh pr comment ${{ github.event.pull_request.number }} \
+            gh pr comment "$PR_NUMBER" \
               --repo "${{ github.repository }}" \
               --body-file /tmp/comment.md
           fi
