@@ -110,7 +110,7 @@ jobs:
           sleep 5
           
           # Get the workflow run ID (most recent run of this workflow)
-          WORKFLOW_ID=$(gh run list --workflow="$WORKFLOW_FILE" --limit 1 --json databaseId --jq '.[0].databaseId')
+          WORKFLOW_ID=$(gh run list --repo "${{ github.repository }}" --workflow="$WORKFLOW_FILE" --limit 1 --json databaseId --jq '.[0].databaseId')
           echo "workflow_id=$WORKFLOW_ID" >> $GITHUB_OUTPUT
           echo "📝 Triggered workflow run ID: $WORKFLOW_ID"
 
