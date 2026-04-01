@@ -83,8 +83,13 @@ jobs:
             # Get the current comment body
             CURRENT_BODY=$(gh api "/repos/${{ github.repository }}/issues/comments/${{ github.event.inputs.comment_id }}" --jq '.body')
             
+            # Remove the "Testing triggered" section if it exists (we're replacing it with results)
+            UPDATED_BODY=$(echo "$CURRENT_BODY" | sed '/🚀 \*\*Testing triggered/,/\[View workflow runs →\]/d')
+            
             cat > /tmp/comment.txt <<EOF
-          $CURRENT_BODY
+          $UPDATED_BODY
+
+          ---
 
           ✅ **$ENV_UPPER Testing Complete**
           
@@ -124,8 +129,13 @@ jobs:
           # Get the current comment body
           CURRENT_BODY=$(gh api "/repos/${{ github.repository }}/issues/comments/${{ github.event.inputs.comment_id }}" --jq '.body')
           
+          # Remove the "Testing triggered" section if it exists (we're replacing it with failure)
+          UPDATED_BODY=$(echo "$CURRENT_BODY" | sed '/🚀 \*\*Testing triggered/,/\[View workflow runs →\]/d')
+          
           cat > /tmp/comment.txt <<EOF
-          $CURRENT_BODY
+          $UPDATED_BODY
+
+          ---
 
           ❌ **$ENV_UPPER Testing Failed**
           

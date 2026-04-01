@@ -218,6 +218,8 @@ jobs:
           cat > /tmp/comment.txt <<EOF
           $ORIGINAL_BODY
 
+          ---
+
           🚀 **$ACTION_TEXT triggered by @${{ github.event.comment.user.login }}**
 
           **Action:** \`$ACTION\`
