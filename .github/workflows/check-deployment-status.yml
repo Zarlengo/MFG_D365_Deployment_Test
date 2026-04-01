@@ -122,6 +122,21 @@ jobs:
             echo "This PR can be merged." >> $GITHUB_STEP_SUMMARY
             echo "can_merge=true" >> $GITHUB_OUTPUT
           else
+            # Get label status for detailed reporting
+            LABELS=$(gh pr view ${{ github.event.pull_request.number }} --json labels --jq '.labels[].name')
+            
+            QAT_DEPLOYED_STATUS="❌"
+            [ $(echo "$LABELS" | grep -c "^deployed:qat$" || true) -gt 0 ] && QAT_DEPLOYED_STATUS="✅"
+            
+            QAT_TESTED_STATUS="❌"
+            [ $(echo "$LABELS" | grep -c "^tested:qat$" || true) -gt 0 ] && QAT_TESTED_STATUS="✅"
+            
+            CRPTRN_DEPLOYED_STATUS="❌"
+            [ $(echo "$LABELS" | grep -c "^deployed:crptrn$" || true) -gt 0 ] && CRPTRN_DEPLOYED_STATUS="✅"
+            
+            CRPTRN_TESTED_STATUS="❌"
+            [ $(echo "$LABELS" | grep -c "^tested:crptrn$" || true) -gt 0 ] && CRPTRN_TESTED_STATUS="✅"
+            
             echo "❌ **Deployment and testing required**" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
             echo "This PR modifies the \`/Metadata\` folder and must be deployed and tested in QAT and CRPTRN before merging." >> $GITHUB_STEP_SUMMARY
@@ -150,7 +165,7 @@ jobs:
         if: |
           always() &&
           steps.check_metadata.outputs.has_metadata_changes == 'true' &&
-          steps.check_labels.outputs.has_required_labels == 'false'
+          steps.check_labels.outputs.has_labels == 'false'
         run: |
           # Check if we already posted a comment
           EXISTING_COMMENT=$(gh pr view ${{ github.event.pull_request.number }} \
