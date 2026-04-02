@@ -9,6 +9,7 @@ permissions:
   issues: write
   pull-requests: write
   actions: write
+  statuses: write
 
 jobs:
   # ============================================
