@@ -82,6 +82,8 @@ jobs:
       pr_branch: ${{ steps.get-branch.outputs.pr_branch }}
 
     steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
       - name: Get PR branch name
         id: get-branch
         run: |
