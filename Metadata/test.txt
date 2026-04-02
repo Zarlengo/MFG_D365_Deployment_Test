@@ -2,3 +2,4 @@ Test metadata file
 test change
 Test change 3 for workflow testing
 Another change
+Final test
