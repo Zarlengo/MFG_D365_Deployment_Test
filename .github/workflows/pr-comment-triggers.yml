@@ -71,246 +71,94 @@ jobs:
           GH_TOKEN: ${{ github.token }}
 
   # ============================================
-  # Trigger Deployment
+  # Get PR Branch (shared info for all triggers)
   # ============================================
-  trigger-deploy:
-    name: Trigger Deployment
+  get-pr-info:
+    name: Get PR Information
     runs-on: ubuntu-latest
     needs: parse
+    if: needs.parse.outputs.valid == 'true'
+    outputs:
+      pr_branch: ${{ steps.get-branch.outputs.pr_branch }}
+
+    steps:
+      - name: Get PR branch name
+        id: get-branch
+        run: |
+          PR_NUMBER="${{ github.event.issue.number }}"
+          echo "📋 Getting PR branch information..."
+          PR_BRANCH=$(gh pr view "$PR_NUMBER" --json headRefName --jq '.headRefName')
+          echo "pr_branch=$PR_BRANCH" >> $GITHUB_OUTPUT
+          echo "Branch: $PR_BRANCH"
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+  # ============================================
+  # Build (Trigger and Wait)
+  # ============================================
+  build:
+    name: Build
+    needs: [parse, get-pr-info]
     if: |
       needs.parse.outputs.valid == 'true' &&
       needs.parse.outputs.action == 'deploy'
-
-    outputs:
-      workflow_id: ${{ steps.trigger.outputs.workflow_id }}
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v6
-
-      - name: Remove stale labels and trigger workflow
-        id: trigger
-        run: |
-          ACTION="${{ needs.parse.outputs.action }}"
-          ENV="${{ needs.parse.outputs.environment }}"
-          PR_NUMBER="${{ github.event.issue.number }}"
-
-          WORKFLOW_FILE="ado-pipeline-deploy.yml"
-          ACTION_TEXT="Deployment"
-
-          # Get PR head branch name
-          echo "📋 Getting PR branch information..."
-          PR_BRANCH=$(gh pr view "$PR_NUMBER" --json headRefName --jq '.headRefName')
-          echo "Branch to deploy: $PR_BRANCH"
-
-          # Remove stale labels before starting deployment
-          echo "🗑️ Removing stale labels for $ENV environment..."
-          gh pr edit "$PR_NUMBER" \
-            --repo "${{ github.repository }}" \
-            --remove-label "deployed:$ENV" 2>/dev/null || echo "Label deployed:$ENV not present"
-          gh pr edit "$PR_NUMBER" \
-            --repo "${{ github.repository }}" \
-            --remove-label "tested:$ENV" 2>/dev/null || echo "Label tested:$ENV not present"
-
-          gh workflow run "$WORKFLOW_FILE" \
-            --repo "${{ github.repository }}" \
-            --ref "${{ github.event.repository.default_branch }}" \
-            -f pr_number="$PR_NUMBER" \
-            -f pr_branch="$PR_BRANCH" \
-            -f environment="$ENV" \
-            -f triggered_by="${{ github.event.comment.user.login }}" \
-            -f comment_id="${{ github.event.comment.id }}"
-
-          # Wait a moment for the workflow to appear in the API
-          sleep 5
-
-          # Get the workflow run ID (most recent run of this workflow)
-          WORKFLOW_ID=$(gh run list --repo "${{ github.repository }}" --workflow="$WORKFLOW_FILE" --limit 1 --json databaseId --jq '.[0].databaseId')
-          echo "workflow_id=$WORKFLOW_ID" >> $GITHUB_OUTPUT
-          echo "📝 Triggered workflow run ID: $WORKFLOW_ID"
-
-          # Update the original comment with status
-          ORIGINAL_BODY="${{ github.event.comment.body }}"
-          cat > /tmp/comment.txt <<EOF
-          $ORIGINAL_BODY
-
-          ---
-
-          🚀 **$ACTION_TEXT triggered for \`$ENV\`**
-
-          [View workflow runs →](${{ github.server_url }}/${{ github.repository }}/actions/workflows/$WORKFLOW_FILE)
-          EOF
-
-          gh api \
-            --method PATCH \
-            -H "Accept: application/vnd.github+json" \
-            "/repos/${{ github.repository }}/issues/comments/${{ github.event.comment.id }}" \
-            -f body="$(cat /tmp/comment.txt)"
-        env:
-          GH_TOKEN: ${{ github.token }}
+    uses: ./.github/workflows/reusable-trigger-and-wait.yml
+    with:
+      workflow_file: "ado-pipeline-build.yml"
+      workflow_name: "Build"
+      pr_number: ${{ github.event.issue.number }}
+      pr_branch: ${{ needs.get-pr-info.outputs.pr_branch }}
+      environment: ${{ needs.parse.outputs.environment }}
+      triggered_by: ${{ github.event.comment.user.login }}
+      comment_id: ${{ github.event.comment.id }}
+      timeout_minutes: 120
 
   # ============================================
-  # Wait for Deployment to Complete
+  # Deploy (Trigger and Wait)
   # ============================================
-  wait-for-deploy:
-    name: Wait for Deployment
-    runs-on: ubuntu-latest
-    timeout-minutes: 420 # 7 hours - longer than ADO's 6 hour limit
-    needs: [parse, trigger-deploy]
+  deploy:
+    name: Deploy
+    needs: [parse, get-pr-info, build]
     if: |
+      needs.parse.outputs.valid == 'true' &&
       needs.parse.outputs.action == 'deploy' &&
-      needs.trigger-deploy.outputs.workflow_id != ''
-
-    outputs:
-      success: ${{ steps.wait.outputs.success }}
-
-    steps:
-      - name: Wait for deploy workflow to complete
-        id: wait
-        run: |
-          WORKFLOW_ID="${{ needs.trigger-deploy.outputs.workflow_id }}"
-          echo "⏳ Waiting for workflow run $WORKFLOW_ID to complete..."
-
-          # Watch the workflow run (will block until completion)
-          gh run watch $WORKFLOW_ID --repo "${{ github.repository }}" || true
-
-          # Get the conclusion
-          CONCLUSION=$(gh run view $WORKFLOW_ID --repo "${{ github.repository }}" --json conclusion --jq '.conclusion')
-          echo "📊 Workflow conclusion: $CONCLUSION"
-
-          if [ "$CONCLUSION" = "success" ]; then
-            echo "success=true" >> $GITHUB_OUTPUT
-          else
-            echo "success=false" >> $GITHUB_OUTPUT
-          fi
-        env:
-          GH_TOKEN: ${{ github.token }}
+      needs.build.outputs.success == 'true'
+    uses: ./.github/workflows/reusable-trigger-and-wait.yml
+    with:
+      workflow_file: "ado-pipeline-deploy.yml"
+      workflow_name: "Deployment"
+      pr_number: ${{ github.event.issue.number }}
+      pr_branch: ${{ needs.get-pr-info.outputs.pr_branch }}
+      environment: ${{ needs.parse.outputs.environment }}
+      triggered_by: ${{ github.event.comment.user.login }}
+      comment_id: ${{ github.event.comment.id }}
+      remove_labels: "deployed:${{ needs.parse.outputs.environment }},tested:${{ needs.parse.outputs.environment }}"
+      timeout_minutes: 420
 
   # ============================================
-  # Trigger Testing
+  # Test (Trigger and Wait)
   # ============================================
-  trigger-test:
-    name: Trigger Testing
-    runs-on: ubuntu-latest
-    needs: [parse, wait-for-deploy]
-    outputs:
-      workflow_id: ${{ steps.trigger.outputs.workflow_id }}
+  test:
+    name: Test
+    needs: [parse, get-pr-info, deploy]
     if: |
       always() &&
       needs.parse.outputs.valid == 'true' &&
       (
         (needs.parse.outputs.action == 'test') ||
-        (needs.parse.outputs.action == 'deploy' && needs.wait-for-deploy.outputs.success == 'true')
+        (needs.parse.outputs.action == 'deploy' && needs.deploy.outputs.success == 'true')
       )
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v6
-
-      - name: Remove stale labels and trigger workflow
-        id: trigger
-        run: |
-          ACTION="${{ needs.parse.outputs.action }}"
-          ENV="${{ needs.parse.outputs.environment }}"
-          PR_NUMBER="${{ github.event.issue.number }}"
-
-          WORKFLOW_FILE="ado-pipeline-test.yml"
-          ACTION_TEXT="Testing"
-
-          # Get PR head branch name
-          echo "📋 Getting PR branch information..."
-          PR_BRANCH=$(gh pr view "$PR_NUMBER" --json headRefName --jq '.headRefName')
-          echo "Branch to test: $PR_BRANCH"
-
-          # Remove stale test label before starting
-          echo "🗑️ Removing stale test label for $ENV environment..."
-          gh pr edit "$PR_NUMBER" \
-            --repo "${{ github.repository }}" \
-            --remove-label "tested:$ENV" 2>/dev/null || echo "Label tested:$ENV not present"
-
-          gh workflow run "$WORKFLOW_FILE" \
-            --repo "${{ github.repository }}" \
-            --ref "${{ github.event.repository.default_branch }}" \
-            -f pr_number="$PR_NUMBER" \
-            -f pr_branch="$PR_BRANCH" \
-            -f environment="$ENV" \
-            -f triggered_by="${{ github.event.comment.user.login }}" \
-            -f comment_id="${{ github.event.comment.id }}"
-
-          # Wait a moment for the workflow to appear in the API
-          sleep 5
-
-          # Get the workflow run ID (most recent run of this workflow)
-          WORKFLOW_ID=$(gh run list --repo "${{ github.repository }}" --workflow="$WORKFLOW_FILE" --limit 1 --json databaseId --jq '.[0].databaseId')
-          echo "workflow_id=$WORKFLOW_ID" >> $GITHUB_OUTPUT
-          echo "📝 Triggered workflow run ID: $WORKFLOW_ID"
-
-          # Update the original comment with testing triggered status
-          # Sleep to ensure we get latest comment (after deploy might have updated it)
-          sleep 2
-          ORIGINAL_BODY=$(gh api "/repos/${{ github.repository }}/issues/comments/${{ github.event.comment.id }}" --jq '.body')
-
-          cat > /tmp/comment.txt <<EOF
-          $ORIGINAL_BODY
-
-          ---
-
-          🚀 **$ACTION_TEXT triggered for \`$ENV\`**
-
-          [View workflow runs →](${{ github.server_url }}/${{ github.repository }}/actions/workflows/$WORKFLOW_FILE)
-          EOF
-
-          gh api \
-            --method PATCH \
-            -H "Accept: application/vnd.github+json" \
-            "/repos/${{ github.repository }}/issues/comments/${{ github.event.comment.id }}" \
-            -f body="$(cat /tmp/comment.txt)"
-
-          echo "✅ Test workflow triggered for $ENV environment"
-        env:
-          GH_TOKEN: ${{ github.token }}
-
-  # ============================================
-  # Wait for Testing to Complete
-  # ============================================
-  wait-for-test:
-    name: Wait for Testing
-    runs-on: ubuntu-latest
-    timeout-minutes: 480 # 8 hours - longer than ADO's 6 hour limit
-    needs: [parse, trigger-test]
-    if: |
-      always() &&
-      needs.parse.outputs.valid == 'true' &&
-      needs.trigger-test.result == 'success'
-    outputs:
-      success: ${{ steps.wait.outputs.success }}
-      workflow_id: ${{ needs.trigger-test.outputs.workflow_id }}
-
-    steps:
-      - name: Wait for test workflow to complete
-        id: wait
-        run: |
-          WORKFLOW_ID="${{ needs.trigger-test.outputs.workflow_id }}"
-
-          if [ -z "$WORKFLOW_ID" ]; then
-            echo "❌ No workflow ID from trigger-test"
-            echo "success=false" >> $GITHUB_OUTPUT
-            exit 1
-          fi
-
-          echo "⏳ Waiting for test workflow run $WORKFLOW_ID to complete..."
-
-          # Watch the workflow run (blocks until completion)
-          if gh run watch "$WORKFLOW_ID" --repo "${{ github.repository }}" --exit-status; then
-            echo "success=true" >> $GITHUB_OUTPUT
-            echo "✅ Test workflow completed successfully"
-          else
-            echo "success=false" >> $GITHUB_OUTPUT
-            echo "❌ Test workflow failed"
-            exit 1
-          fi
-        env:
-          GH_TOKEN: ${{ github.token }}
+    uses: ./.github/workflows/reusable-trigger-and-wait.yml
+    with:
+      workflow_file: "ado-pipeline-test.yml"
+      workflow_name: "Testing"
+      pr_number: ${{ github.event.issue.number }}
+      pr_branch: ${{ needs.get-pr-info.outputs.pr_branch }}
+      environment: ${{ needs.parse.outputs.environment }}
+      triggered_by: ${{ github.event.comment.user.login }}
+      comment_id: ${{ github.event.comment.id }}
+      remove_labels: "tested:${{ needs.parse.outputs.environment }}"
+      timeout_minutes: 480
 
   # ============================================
   # Create Deployment Status Check
@@ -318,11 +166,11 @@ jobs:
   create-deployment-check:
     name: Create Deployment Status Check
     runs-on: ubuntu-latest
-    needs: [parse, wait-for-test]
+    needs: [parse, test]
     if: |
       always() &&
       needs.parse.outputs.valid == 'true' &&
-      (needs.parse.outputs.action == 'check' || needs.wait-for-test.result != 'skipped')
+      (needs.parse.outputs.action == 'check' || needs.test.result != 'skipped')
 
     steps:
       - name: Checkout code
