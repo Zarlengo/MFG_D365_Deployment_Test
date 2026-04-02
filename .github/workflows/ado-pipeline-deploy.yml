@@ -115,6 +115,13 @@ jobs:
             --arg prUrl "$PR_URL" \
             --arg triggeredBy "${{ inputs.triggered_by || github.actor }}" \
             '{
+              resources: {
+                repositories: {
+                  self: {
+                    refName: "refs/heads/feature/git-refactor"
+                  }
+                }
+              },
               templateParameters: {
                 sourceBranch: $branch,
                 environment: $env,
