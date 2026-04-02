@@ -124,14 +124,32 @@ jobs:
             echo "❌ PR is not approved"
             echo "approved=false" >> $GITHUB_OUTPUT
             
-            # Comment on PR
-            COMMENT="❌ **Deployment blocked**: This PR must be approved before deployment.
-
-            Please have a team member review and approve this PR first."
+            # Update the original command comment with blocked status
+            COMMENT_ID="${{ github.event.comment.id }}"
+            ENV="${{ needs.parse.outputs.environment }}"
+            ENV_UPPER=$(echo "$ENV" | tr '[:lower:]' '[:upper:]')
             
-            gh pr comment ${{ github.event.issue.number }} \
-              --repo "${{ github.repository }}" \
-              --body "$COMMENT"
+            CURRENT_BODY=$(gh api "/repos/${{ github.repository }}/issues/comments/$COMMENT_ID" --jq '.body')
+            
+            cat > /tmp/comment.txt <<EOF
+            $CURRENT_BODY
+
+            ---
+
+            ❌ **$ENV_UPPER Deployment Blocked**
+
+            This PR must be approved before deployment.
+
+            Please have a team member review and approve this PR first, then try again.
+
+            [View workflow run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
+            EOF
+            
+            gh api \
+              --method PATCH \
+              -H "Accept: application/vnd.github+json" \
+              "/repos/${{ github.repository }}/issues/comments/$COMMENT_ID" \
+              -f body="$(cat /tmp/comment.txt)"
             
             exit 1
           fi
