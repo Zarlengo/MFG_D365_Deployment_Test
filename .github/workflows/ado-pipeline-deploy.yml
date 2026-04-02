@@ -101,12 +101,32 @@ jobs:
           ENV_UPPER=$(echo "${{ inputs.environment }}" | tr '[:lower:]' '[:upper:]')
           echo "🚀 Triggering $ENV_UPPER deployment pipeline (ID: ${{ inputs.pipeline_id }})..."
           
+          # Trim whitespace from PAT
+          ADO_PAT=$(echo "$ADO_PAT" | tr -d '[:space:]')
+          
           # Debug: Check if ADO_PAT is set
           if [ -z "$ADO_PAT" ]; then
             echo "❌ ADO_PAT secret is not set or empty"
             exit 1
           fi
           echo "✓ ADO_PAT is set (length: ${#ADO_PAT})"
+          
+          # Test PAT by getting organization info
+          echo "Testing PAT authentication..."
+          TEST_RESPONSE=$(curl -s -w "\nHTTP_STATUS:%{http_code}" \
+            -u ":$ADO_PAT" \
+            "https://dev.azure.com/CostcoWholesale/_apis/projects?api-version=7.0")
+          
+          TEST_STATUS=$(echo "$TEST_RESPONSE" | grep "HTTP_STATUS:" | cut -d':' -f2)
+          echo "PAT test status: $TEST_STATUS"
+          
+          if [ "$TEST_STATUS" != "200" ]; then
+            echo "❌ PAT authentication failed!"
+            TEST_BODY=$(echo "$TEST_RESPONSE" | sed '/HTTP_STATUS:/d')
+            echo "$TEST_BODY" | head -20
+            exit 1
+          fi
+          echo "✓ PAT authentication successful"
           
           # Build parameters JSON
           PARAMS=$(cat <<EOF
@@ -123,10 +143,11 @@ jobs:
           EOF
           )
           
-          # Trigger the pipeline
+          echo "Triggering pipeline..."
+          # Trigger the pipeline using -u flag (simpler than manual base64)
           RESPONSE=$(curl -s -w "\nHTTP_STATUS:%{http_code}" -X POST \
+            -u ":$ADO_PAT" \
             "https://dev.azure.com/CostcoWholesale/Manufacturing/_apis/pipelines/${{ inputs.pipeline_id }}/runs?api-version=7.0" \
-            -H "Authorization: Bearer $ADO_PAT" \
             -H "Content-Type: application/json" \
             -d "$PARAMS")
           
@@ -135,9 +156,19 @@ jobs:
           
           echo "HTTP Status: $HTTP_STATUS"
           
+          if [ "$HTTP_STATUS" != "200" ]; then
+            echo "❌ Failed to trigger pipeline (HTTP $HTTP_STATUS)"
+            echo "Response:"
+            echo "$BODY"
+            if [ -n "$BODY" ]; then
+              echo "$BODY" | jq '.' 2>/dev/null || echo "$BODY"
+            fi
+            exit 1
+          fi
+          
           RUN_ID=$(echo "$BODY" | jq -r '.id')
           if [ "$RUN_ID" = "null" ] || [ -z "$RUN_ID" ]; then
-            echo "❌ Failed to trigger pipeline"
+            echo "❌ Failed to get run ID from response"
             echo "Response:"
             echo "$BODY" | jq '.'
             exit 1
@@ -154,6 +185,9 @@ jobs:
           RUN_ID="${{ steps.deploy.outputs.run_id }}"
           echo "⏳ Waiting for pipeline $RUN_ID to complete..."
           
+          # Base64 encode PAT for Basic auth
+          AUTH=$(echo -n ":$ADO_PAT" | base64)
+          
           MAX_WAIT=7200  # 2 hours
           ELAPSED=0
           
@@ -163,7 +197,7 @@ jobs:
             
             STATUS_RESPONSE=$(curl -s \
               "https://dev.azure.com/CostcoWholesale/Manufacturing/_apis/build/builds/$RUN_ID?api-version=7.0" \
-              -H "Authorization: Bearer $ADO_PAT")
+              -H "Authorization: Basic $AUTH")
             
             STATUS=$(echo "$STATUS_RESPONSE" | jq -r '.status')
             RESULT=$(echo "$STATUS_RESPONSE" | jq -r '.result')
