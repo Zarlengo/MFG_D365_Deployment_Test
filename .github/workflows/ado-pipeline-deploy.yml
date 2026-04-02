@@ -97,6 +97,8 @@ jobs:
         id: deploy
         env:
           ADO_PAT: ${{ secrets.ADO_PAT }}
+          PR_TITLE: ${{ steps.pr_info.outputs.pr_title }}
+          PR_URL: ${{ steps.pr_info.outputs.pr_url }}
         run: |
           ENV_UPPER=$(echo "${{ inputs.environment }}" | tr '[:lower:]' '[:upper:]')
           echo "🚀 Triggering $ENV_UPPER deployment pipeline (ID: ${{ inputs.pipeline_id }})..."
@@ -104,13 +106,13 @@ jobs:
           # Trim whitespace from PAT
           ADO_PAT=$(echo "$ADO_PAT" | tr -d '[:space:]')
           
-          # Build parameters JSON (escape special characters)
+          # Build parameters JSON (using env vars to avoid bash escaping issues)
           PARAMS=$(jq -n \
             --arg branch "${{ inputs.pr_branch }}" \
             --arg env "${{ inputs.environment }}" \
             --arg prNum "${{ inputs.pr_number }}" \
-            --arg prTitle "${{ steps.pr_info.outputs.pr_title }}" \
-            --arg prUrl "${{ steps.pr_info.outputs.pr_url }}" \
+            --arg prTitle "$PR_TITLE" \
+            --arg prUrl "$PR_URL" \
             --arg triggeredBy "${{ inputs.triggered_by || github.actor }}" \
             '{
               templateParameters: {
