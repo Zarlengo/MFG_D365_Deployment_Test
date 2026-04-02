@@ -131,18 +131,13 @@ jobs:
             
             CURRENT_BODY=$(gh api "/repos/${{ github.repository }}/issues/comments/$COMMENT_ID" --jq '.body')
             
-            # Build comment with blocked status
-            NEW_BODY="$CURRENT_BODY
-
----
-
-❌ **$ENV_UPPER Deployment Blocked**
-
-This PR must be approved before deployment.
-
-Please have a team member review and approve this PR first, then try again.
-
-[View workflow run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})"
+            # Build comment with blocked status (using printf for proper newlines)
+            printf -v NEW_BODY '%s\n\n---\n\n❌ **%s Deployment Blocked**\n\nThis PR must be approved before deployment.\n\nPlease have a team member review and approve this PR first, then try again.\n\n[View workflow run](%s/%s/actions/runs/%s)' \
+              "$CURRENT_BODY" \
+              "$ENV_UPPER" \
+              "${{ github.server_url }}" \
+              "${{ github.repository }}" \
+              "${{ github.run_id }}"
             
             gh api \
               --method PATCH \
