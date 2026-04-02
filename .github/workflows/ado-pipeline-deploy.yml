@@ -99,6 +99,13 @@ jobs:
           ENV_UPPER=$(echo "${{ inputs.environment }}" | tr '[:lower:]' '[:upper:]')
           echo "🚀 Triggering $ENV_UPPER deployment pipeline (ID: ${{ inputs.pipeline_id }})..."
           
+          # Debug: Check if ADO_PAT is set
+          if [ -z "${{ secrets.ADO_PAT }}" ]; then
+            echo "❌ ADO_PAT secret is not set or empty"
+            exit 1
+          fi
+          echo "✓ ADO_PAT is set (length: ${#ADO_PAT})"
+          
           # Build parameters JSON
           PARAMS=$(cat <<EOF
           {
@@ -115,18 +122,26 @@ jobs:
           )
           
           # Trigger the pipeline
-          RESPONSE=$(curl -s -X POST \
+          RESPONSE=$(curl -s -w "\nHTTP_STATUS:%{http_code}" -X POST \
             "https://dev.azure.com/CostcoWholesale/Manufacturing/_apis/pipelines/${{ inputs.pipeline_id }}/runs?api-version=7.0" \
             -H "Authorization: Bearer ${{ secrets.ADO_PAT }}" \
             -H "Content-Type: application/json" \
             -d "$PARAMS")
           
-          RUN_ID=$(echo "$RESPONSE" | jq -r '.id')
+          HTTP_STATUS=$(echo "$RESPONSE" | grep "HTTP_STATUS:" | cut -d':' -f2)
+          BODY=$(echo "$RESPONSE" | sed '/HTTP_STATUS:/d')
+          
+          echo "HTTP Status: $HTTP_STATUS"
+          
+          RUN_ID=$(echo "$BODY" | jq -r '.id')
           if [ "$RUN_ID" = "null" ] || [ -z "$RUN_ID" ]; then
             echo "❌ Failed to trigger pipeline"
-            echo "$RESPONSE" | jq '.'
+            echo "Response:"
+            echo "$BODY" | jq '.'
             exit 1
           fi
+        env:
+          ADO_PAT: ${{ secrets.ADO_PAT }}
           
           echo "run_id=$RUN_ID" >> $GITHUB_OUTPUT
           echo "✅ Pipeline triggered successfully (Run ID: $RUN_ID)"
