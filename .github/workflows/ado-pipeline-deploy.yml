@@ -128,20 +128,30 @@ jobs:
           fi
           echo "✓ PAT authentication successful"
           
-          # Build parameters JSON
-          PARAMS=$(cat <<EOF
-          {
-            "templateParameters": {
-              "sourceBranch": "${{ inputs.pr_branch }}",
-              "environment": "${{ inputs.environment }}",
-              "prNumber": "${{ inputs.pr_number }}",
-              "prTitle": "${{ steps.pr_info.outputs.pr_title }}",
-              "prUrl": "${{ steps.pr_info.outputs.pr_url }}",
-              "triggeredBy": "${{ inputs.triggered_by || github.actor }}"
-            }
-          }
-          EOF
-          )
+          # Build parameters JSON (escape special characters)
+          PR_TITLE_ESCAPED=$(echo "${{ steps.pr_info.outputs.pr_title }}" | jq -Rs .)
+          PR_URL_ESCAPED=$(echo "${{ steps.pr_info.outputs.pr_url }}" | jq -Rs .)
+          
+          PARAMS=$(jq -n \
+            --arg branch "${{ inputs.pr_branch }}" \
+            --arg env "${{ inputs.environment }}" \
+            --arg prNum "${{ inputs.pr_number }}" \
+            --argjson prTitle "$PR_TITLE_ESCAPED" \
+            --argjson prUrl "$PR_URL_ESCAPED" \
+            --arg triggeredBy "${{ inputs.triggered_by || github.actor }}" \
+            '{
+              templateParameters: {
+                sourceBranch: $branch,
+                environment: $env,
+                prNumber: $prNum,
+                prTitle: $prTitle,
+                prUrl: $prUrl,
+                triggeredBy: $triggeredBy
+              }
+            }')
+          
+          echo "Parameters to send:"
+          echo "$PARAMS" | jq '.'
           
           echo "Triggering pipeline..."
           # Trigger the pipeline using -u flag (simpler than manual base64)
