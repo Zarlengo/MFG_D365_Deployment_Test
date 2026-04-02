@@ -20,6 +20,10 @@ on:
           - "qat"
           - "crptrn"
         default: "qat"
+      pipeline_id:
+        description: "ADO Pipeline ID to trigger"
+        required: true
+        type: string
       triggered_by:
         description: "User who triggered this (for audit trail)"
         required: false
@@ -28,6 +32,36 @@ on:
         description: "Comment ID to update with results"
         required: false
         type: string
+  
+  workflow_call:
+    inputs:
+      pr_number:
+        description: "PR number to label (leave empty to skip labeling)"
+        required: false
+        type: string
+      pr_branch:
+        description: "PR branch to checkout and deploy"
+        required: true
+        type: string
+      environment:
+        description: "Environment to deploy"
+        required: true
+        type: string
+      pipeline_id:
+        description: "ADO Pipeline ID to trigger"
+        required: true
+        type: string
+      triggered_by:
+        description: "User who triggered this (for audit trail)"
+        required: false
+        type: string
+      comment_id:
+        description: "Comment ID to update with results"
+        required: false
+        type: string
+    secrets:
+      ADO_PAT:
+        required: true
 
 permissions:
   contents: read
@@ -35,7 +69,7 @@ permissions:
 
 jobs:
   deploy:
-    name: Deploy to ${{ github.event.inputs.environment }}
+    name: Deploy to ${{ inputs.environment }}
     runs-on: ubuntu-latest
     outputs:
       deployment_status: ${{ steps.deploy.outcome }}
@@ -44,50 +78,118 @@ jobs:
       - name: Checkout PR branch
         uses: actions/checkout@v6
         with:
-          ref: ${{ github.event.inputs.pr_branch }}
+          ref: ${{ inputs.pr_branch }}
           fetch-depth: 0
+      
+      - name: Get PR info
+        id: pr_info
+        if: inputs.pr_number != ''
+        run: |
+          PR_DATA=$(gh pr view ${{ inputs.pr_number }} --json title,url)
+          PR_TITLE=$(echo "$PR_DATA" | jq -r '.title')
+          PR_URL=$(echo "$PR_DATA" | jq -r '.url')
+          echo "pr_title=$PR_TITLE" >> $GITHUB_OUTPUT
+          echo "pr_url=$PR_URL" >> $GITHUB_OUTPUT
+        env:
+          GH_TOKEN: ${{ github.token }}
 
-      - name: Simulate Deployment
+      - name: Trigger ADO Deployment Pipeline
         id: deploy
         run: |
-          echo "🚀 Starting deployment to ${{ github.event.inputs.environment }} environment..."
-          echo "⏳ Deploying packages..."
-          sleep 30
-
-          # 50% random failure
-          if [ $((RANDOM % 2)) -eq 0 ]; then
-            echo "✅ ${{ github.event.inputs.environment }} deployment completed successfully"
-            echo "status=success" >> $GITHUB_OUTPUT
-          else
-            echo "❌ ${{ github.event.inputs.environment }} deployment failed"
+          ENV_UPPER=$(echo "${{ inputs.environment }}" | tr '[:lower:]' '[:upper:]')
+          echo "🚀 Triggering $ENV_UPPER deployment pipeline (ID: ${{ inputs.pipeline_id }})..."
+          
+          # Build parameters JSON
+          PARAMS=$(cat <<EOF
+          {
+            "templateParameters": {
+              "sourceBranch": "${{ inputs.pr_branch }}",
+              "environment": "${{ inputs.environment }}",
+              "prNumber": "${{ inputs.pr_number }}",
+              "prTitle": "${{ steps.pr_info.outputs.pr_title }}",
+              "prUrl": "${{ steps.pr_info.outputs.pr_url }}",
+              "triggeredBy": "${{ inputs.triggered_by || github.actor }}"
+            }
+          }
+          EOF
+          )
+          
+          # Trigger the pipeline
+          RESPONSE=$(curl -s -X POST \
+            "https://dev.azure.com/CostcoWholesale/Manufacturing/_apis/pipelines/${{ inputs.pipeline_id }}/runs?api-version=7.0" \
+            -H "Authorization: Bearer ${{ secrets.ADO_PAT }}" \
+            -H "Content-Type: application/json" \
+            -d "$PARAMS")
+          
+          RUN_ID=$(echo "$RESPONSE" | jq -r '.id')
+          if [ "$RUN_ID" = "null" ] || [ -z "$RUN_ID" ]; then
+            echo "❌ Failed to trigger pipeline"
+            echo "$RESPONSE" | jq '.'
             exit 1
           fi
+          
+          echo "run_id=$RUN_ID" >> $GITHUB_OUTPUT
+          echo "✅ Pipeline triggered successfully (Run ID: $RUN_ID)"
+          echo "🔗 https://dev.azure.com/CostcoWholesale/Manufacturing/_build/results?buildId=$RUN_ID"
+          
+          # Wait for completion
+          echo "⏳ Waiting for pipeline to complete..."
+          MAX_WAIT=7200  # 2 hours
+          ELAPSED=0
+          
+          while [ $ELAPSED -lt $MAX_WAIT ]; do
+            sleep 30
+            ELAPSED=$((ELAPSED + 30))
+            
+            STATUS_RESPONSE=$(curl -s \
+              "https://dev.azure.com/CostcoWholesale/Manufacturing/_apis/build/builds/$RUN_ID?api-version=7.0" \
+              -H "Authorization: Bearer ${{ secrets.ADO_PAT }}")
+            
+            STATUS=$(echo "$STATUS_RESPONSE" | jq -r '.status')
+            RESULT=$(echo "$STATUS_RESPONSE" | jq -r '.result')
+            
+            echo "Status: $STATUS, Result: $RESULT (${ELAPSED}s elapsed)"
+            
+            if [ "$STATUS" = "completed" ]; then
+              if [ "$RESULT" = "succeeded" ]; then
+                echo "✅ Pipeline completed successfully"
+                echo "status=success" >> $GITHUB_OUTPUT
+                exit 0
+              else
+                echo "❌ Pipeline failed with result: $RESULT"
+                exit 1
+              fi
+            fi
+          done
+          
+          echo "⏰ Pipeline timed out after $MAX_WAIT seconds"
+          exit 1
 
   label:
-    name: Label ${{ github.event.inputs.environment }} Success
+    name: Label ${{ inputs.environment }} Success
     runs-on: ubuntu-latest
     needs: [deploy]
     if: |
       always() &&
       needs.deploy.result == 'success' &&
-      github.event.inputs.pr_number != ''
+      inputs.pr_number != ''
 
     steps:
       - name: Add labels
         run: |
-          ENV="${{ github.event.inputs.environment }}"
+          ENV="${{ inputs.environment }}"
           ENV_UPPER=$(echo "$ENV" | tr '[:lower:]' '[:upper:]')
 
-          echo "🏷️ Adding $ENV success labels to PR #${{ github.event.inputs.pr_number }}"
+          echo "🏷️ Adding $ENV success labels to PR #${{ inputs.pr_number }}"
 
-          gh pr edit ${{ github.event.inputs.pr_number }} \
+          gh pr edit ${{ inputs.pr_number }} \
             --repo "${{ github.repository }}" \
             --add-label "deployed:$ENV"
 
           # Update the original comment if comment_id provided
-          if [ -n "${{ github.event.inputs.comment_id }}" ]; then
+          if [ -n "${{ inputs.comment_id }}" ]; then
             # Get the current comment body
-            CURRENT_BODY=$(gh api "/repos/${{ github.repository }}/issues/comments/${{ github.event.inputs.comment_id }}" --jq '.body')
+            CURRENT_BODY=$(gh api "/repos/${{ github.repository }}/issues/comments/${{ inputs.comment_id }}" --jq '.body')
             
             # Remove the "Deployment triggered" section (multiline block including preceding ---)
             # Using awk for robust multiline matching
@@ -133,7 +235,7 @@ jobs:
             gh api \
               --method PATCH \
               -H "Accept: application/vnd.github+json" \
-              "/repos/${{ github.repository }}/issues/comments/${{ github.event.inputs.comment_id }}" \
+              "/repos/${{ github.repository }}/issues/comments/${{ inputs.comment_id }}" \
               -f body="$(cat /tmp/comment.txt)"
           fi
         env:
@@ -146,19 +248,19 @@ jobs:
     if: |
       always() &&
       needs.deploy.result == 'failure' &&
-      github.event.inputs.comment_id != ''
+      inputs.comment_id != ''
 
     steps:
       - name: Update comment with failure
         run: |
-          ENV="${{ github.event.inputs.environment }}"
+          ENV="${{ inputs.environment }}"
           ENV_UPPER=$(echo "$ENV" | tr '[:lower:]' '[:upper:]')
 
           # Wait a moment to ensure we get the latest comment
           sleep 2
 
           # Get the current comment body
-          CURRENT_BODY=$(gh api "/repos/${{ github.repository }}/issues/comments/${{ github.event.inputs.comment_id }}" --jq '.body')
+          CURRENT_BODY=$(gh api "/repos/${{ github.repository }}/issues/comments/${{ inputs.comment_id }}" --jq '.body')
 
           # Remove the "Deployment triggered" section (multiline block including preceding ---)
           # Using a more robust approach with awk
@@ -204,7 +306,7 @@ jobs:
           gh api \
             --method PATCH \
             -H "Accept: application/vnd.github+json" \
-            "/repos/${{ github.repository }}/issues/comments/${{ github.event.inputs.comment_id }}" \
+            "/repos/${{ github.repository }}/issues/comments/${{ inputs.comment_id }}" \
             -f body="$(cat /tmp/comment.txt)"
         env:
           GH_TOKEN: ${{ github.token }}
@@ -223,15 +325,15 @@ jobs:
         run: |
           echo "# Deployment Summary" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Environment:** ${{ github.event.inputs.environment }}" >> $GITHUB_STEP_SUMMARY
-          if [ -n "${{ github.event.inputs.triggered_by }}" ]; then
-            echo "**Triggered by:** @${{ github.event.inputs.triggered_by }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Environment:** ${{ inputs.environment }}" >> $GITHUB_STEP_SUMMARY
+          if [ -n "${{ inputs.triggered_by }}" ]; then
+            echo "**Triggered by:** @${{ inputs.triggered_by }}" >> $GITHUB_STEP_SUMMARY
           fi
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "## Results" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
 
-          ENV="${{ github.event.inputs.environment }}"
+          ENV="${{ inputs.environment }}"
 
           echo "### ${ENV^} Environment" >> $GITHUB_STEP_SUMMARY
           if [ "${{ needs.deploy.result }}" = "success" ]; then
@@ -239,3 +341,4 @@ jobs:
           elif [ "${{ needs.deploy.result }}" = "failure" ]; then
             echo "- ❌ Deployment: Failed" >> $GITHUB_STEP_SUMMARY
           fi
+

@@ -20,7 +20,7 @@ jobs:
     runs-on: ubuntu-latest
     if: |
       github.event.issue.pull_request &&
-      (startsWith(github.event.comment.body, '/deploy') || startsWith(github.event.comment.body, '/test') || startsWith(github.event.comment.body, '/check'))
+      (startsWith(github.event.comment.body, '/deploy') || startsWith(github.event.comment.body, '/check'))
 
     outputs:
       valid: ${{ steps.parse.outputs.valid }}
@@ -36,10 +36,6 @@ jobs:
           # Extract command and environment
           if [[ "$COMMENT" =~ ^/deploy[[:space:]]+(adt|qat|crptrn) ]]; then
             echo "action=deploy" >> $GITHUB_OUTPUT
-            echo "environment=${BASH_REMATCH[1]}" >> $GITHUB_OUTPUT
-            echo "valid=true" >> $GITHUB_OUTPUT
-          elif [[ "$COMMENT" =~ ^/test[[:space:]]+(adt|qat|crptrn) ]]; then
-            echo "action=test" >> $GITHUB_OUTPUT
             echo "environment=${BASH_REMATCH[1]}" >> $GITHUB_OUTPUT
             echo "valid=true" >> $GITHUB_OUTPUT
           elif [[ "$COMMENT" =~ ^/check ]]; then
@@ -105,39 +101,15 @@ jobs:
     if: |
       needs.parse.outputs.valid == 'true' &&
       needs.parse.outputs.action == 'deploy'
-    uses: ./.github/workflows/reusable-trigger-and-wait.yml
+    uses: ./.github/workflows/ado-pipeline-deploy.yml
+    secrets: inherit
     with:
-      workflow_file: "ado-pipeline-deploy.yml"
-      workflow_name: "Deployment"
       pr_number: ${{ github.event.issue.number }}
       pr_branch: ${{ needs.get-pr-info.outputs.pr_branch }}
       environment: ${{ needs.parse.outputs.environment }}
-      pipeline_id: ${{ needs.parse.outputs.environment == 'qat' && '10591' || needs.parse.outputs.environment == 'adt' && 'TBD' || needs.parse.outputs.environment == 'crptrn' && 'TBD' }}
+      pipeline_id: '10591'
       triggered_by: ${{ github.event.comment.user.login }}
       comment_id: ${{ github.event.comment.id }}
-      remove_labels: "deployed:${{ needs.parse.outputs.environment }}"
-      timeout_minutes: 420
-
-  # ============================================
-  # Test (Separate Command Only)
-  # ============================================
-  test:
-    name: Test
-    needs: [parse, get-pr-info]
-    if: |
-      needs.parse.outputs.valid == 'true' &&
-      needs.parse.outputs.action == 'test'
-    uses: ./.github/workflows/reusable-trigger-and-wait.yml
-    with:
-      workflow_file: "ado-pipeline-test.yml"
-      workflow_name: "Testing"
-      pr_number: ${{ github.event.issue.number }}
-      pr_branch: ${{ needs.get-pr-info.outputs.pr_branch }}
-      environment: ${{ needs.parse.outputs.environment }}
-      triggered_by: ${{ github.event.comment.user.login }}
-      comment_id: ${{ github.event.comment.id }}
-      remove_labels: "tested:${{ needs.parse.outputs.environment }}"
-      timeout_minutes: 480
 
   # ============================================
   # Create Deployment Status Check
@@ -145,7 +117,7 @@ jobs:
   create-deployment-check:
     name: Create Deployment Status Check
     runs-on: ubuntu-latest
-    needs: [parse, deploy, test]
+    needs: [parse, deploy]
     if: |
       always() &&
       needs.parse.outputs.valid == 'true' &&
@@ -183,7 +155,7 @@ jobs:
             # Get PR labels
             LABELS=$(gh pr view "$PR_NUMBER" --json labels --jq '.labels[].name')
             
-            # Check for deployment labels only (not testing)
+            # Check for deployment labels
             HAS_DEPLOYED_QAT=$(echo "$LABELS" | grep -c "^deployed:qat$" || true)
             HAS_DEPLOYED_CRPTRN=$(echo "$LABELS" | grep -c "^deployed:crptrn$" || true)
             
