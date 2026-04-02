@@ -51,6 +51,10 @@ on:
         description: "ADO Pipeline ID to trigger"
         required: true
         type: string
+      yaml_branch:
+        description: "Branch containing the pipeline YAML (leave empty to use pipeline default)"
+        required: false
+        type: string
       triggered_by:
         description: "User who triggered this (for audit trail)"
         required: false
