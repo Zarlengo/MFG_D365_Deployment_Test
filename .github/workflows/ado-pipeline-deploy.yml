@@ -99,6 +99,7 @@ jobs:
           ADO_PAT: ${{ secrets.ADO_PAT }}
           PR_TITLE: ${{ steps.pr_info.outputs.pr_title }}
           PR_URL: ${{ steps.pr_info.outputs.pr_url }}
+          YAML_BRANCH: ${{ inputs.yaml_branch }}
         run: |
           ENV_UPPER=$(echo "${{ inputs.environment }}" | tr '[:lower:]' '[:upper:]')
           echo "🚀 Triggering $ENV_UPPER deployment pipeline (ID: ${{ inputs.pipeline_id }})..."
@@ -107,30 +108,53 @@ jobs:
           ADO_PAT=$(echo "$ADO_PAT" | tr -d '[:space:]')
           
           # Build parameters JSON (using env vars to avoid bash escaping issues)
-          PARAMS=$(jq -n \
-            --arg branch "${{ inputs.pr_branch }}" \
-            --arg env "${{ inputs.environment }}" \
-            --arg prNum "${{ inputs.pr_number }}" \
-            --arg prTitle "$PR_TITLE" \
-            --arg prUrl "$PR_URL" \
-            --arg triggeredBy "${{ inputs.triggered_by || github.actor }}" \
-            '{
-              resources: {
-                repositories: {
-                  self: {
-                    refName: "refs/heads/feature/git-refactor"
+          if [ -n "$YAML_BRANCH" ]; then
+            # Include resources section to override YAML branch
+            PARAMS=$(jq -n \
+              --arg yamlBranch "$YAML_BRANCH" \
+              --arg branch "${{ inputs.pr_branch }}" \
+              --arg env "${{ inputs.environment }}" \
+              --arg prNum "${{ inputs.pr_number }}" \
+              --arg prTitle "$PR_TITLE" \
+              --arg prUrl "$PR_URL" \
+              --arg triggeredBy "${{ inputs.triggered_by || github.actor }}" \
+              '{
+                resources: {
+                  repositories: {
+                    self: {
+                      refName: ("refs/heads/" + $yamlBranch)
+                    }
                   }
+                },
+                templateParameters: {
+                  sourceBranch: $branch,
+                  environment: $env,
+                  prNumber: $prNum,
+                  prTitle: $prTitle,
+                  prUrl: $prUrl,
+                  triggeredBy: $triggeredBy
                 }
-              },
-              templateParameters: {
-                sourceBranch: $branch,
-                environment: $env,
-                prNumber: $prNum,
-                prTitle: $prTitle,
-                prUrl: $prUrl,
-                triggeredBy: $triggeredBy
-              }
-            }')
+              }')
+          else
+            # Use pipeline default branch
+            PARAMS=$(jq -n \
+              --arg branch "${{ inputs.pr_branch }}" \
+              --arg env "${{ inputs.environment }}" \
+              --arg prNum "${{ inputs.pr_number }}" \
+              --arg prTitle "$PR_TITLE" \
+              --arg prUrl "$PR_URL" \
+              --arg triggeredBy "${{ inputs.triggered_by || github.actor }}" \
+              '{
+                templateParameters: {
+                  sourceBranch: $branch,
+                  environment: $env,
+                  prNumber: $prNum,
+                  prTitle: $prTitle,
+                  prUrl: $prUrl,
+                  triggeredBy: $triggeredBy
+                }
+              }')
+          fi
           
           # Trigger the pipeline
           RESPONSE=$(curl -s -w "\nHTTP_STATUS:%{http_code}" -X POST \

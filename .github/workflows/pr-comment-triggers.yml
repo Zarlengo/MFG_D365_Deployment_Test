@@ -108,6 +108,7 @@ jobs:
       pr_branch: ${{ needs.get-pr-info.outputs.pr_branch }}
       environment: ${{ needs.parse.outputs.environment }}
       pipeline_id: '10591'
+      yaml_branch: 'feature/git-refactor'  # TODO: Change to 'main' after merging
       triggered_by: ${{ github.event.comment.user.login }}
       comment_id: ${{ github.event.comment.id }}
 
