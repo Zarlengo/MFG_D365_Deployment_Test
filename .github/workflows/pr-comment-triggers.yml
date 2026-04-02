@@ -125,11 +125,13 @@ jobs:
             echo "approved=false" >> $GITHUB_OUTPUT
             
             # Comment on PR
+            COMMENT="❌ **Deployment blocked**: This PR must be approved before deployment.
+
+            Please have a team member review and approve this PR first."
+            
             gh pr comment ${{ github.event.issue.number }} \
               --repo "${{ github.repository }}" \
-              --body "❌ **Deployment blocked**: This PR must be approved before deployment.
-              
-Please have a team member review and approve this PR first."
+              --body "$COMMENT"
             
             exit 1
           fi
