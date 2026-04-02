@@ -201,9 +201,6 @@ jobs:
           RUN_ID="${{ steps.deploy.outputs.run_id }}"
           echo "⏳ Waiting for pipeline $RUN_ID to complete..."
           
-          # Base64 encode PAT for Basic auth
-          AUTH=$(echo -n ":$ADO_PAT" | base64)
-          
           MAX_WAIT=7200  # 2 hours
           ELAPSED=0
           
@@ -211,12 +208,20 @@ jobs:
             sleep 30
             ELAPSED=$((ELAPSED + 30))
             
-            STATUS_RESPONSE=$(curl -s \
-              "https://dev.azure.com/CostcoWholesale/Manufacturing/_apis/build/builds/$RUN_ID?api-version=7.0" \
-              -H "Authorization: Basic $AUTH")
+            STATUS_RESPONSE=$(curl -s -w "\nHTTP_STATUS:%{http_code}" \
+              -u ":$ADO_PAT" \
+              "https://dev.azure.com/CostcoWholesale/Manufacturing/_apis/build/builds/$RUN_ID?api-version=7.0")
             
-            STATUS=$(echo "$STATUS_RESPONSE" | jq -r '.status')
-            RESULT=$(echo "$STATUS_RESPONSE" | jq -r '.result')
+            HTTP_STATUS=$(echo "$STATUS_RESPONSE" | grep "HTTP_STATUS:" | cut -d':' -f2)
+            BODY=$(echo "$STATUS_RESPONSE" | sed '/HTTP_STATUS:/d')
+            
+            if [ "$HTTP_STATUS" != "200" ]; then
+              echo "⚠️ Failed to get status (HTTP $HTTP_STATUS). Retrying..."
+              continue
+            fi
+            
+            STATUS=$(echo "$BODY" | jq -r '.status')
+            RESULT=$(echo "$BODY" | jq -r '.result')
             
             echo "Status: $STATUS, Result: $RESULT (${ELAPSED}s elapsed)"
             
@@ -227,12 +232,14 @@ jobs:
                 exit 0
               else
                 echo "❌ Pipeline failed with result: $RESULT"
+                echo "status=failed" >> $GITHUB_OUTPUT
                 exit 1
               fi
             fi
           done
           
           echo "⏰ Pipeline timed out after $MAX_WAIT seconds"
+          echo "status=timeout" >> $GITHUB_OUTPUT
           exit 1
 
   label:
