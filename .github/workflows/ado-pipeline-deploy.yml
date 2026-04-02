@@ -95,12 +95,14 @@ jobs:
 
       - name: Trigger ADO Deployment Pipeline
         id: deploy
+        env:
+          ADO_PAT: ${{ secrets.ADO_PAT }}
         run: |
           ENV_UPPER=$(echo "${{ inputs.environment }}" | tr '[:lower:]' '[:upper:]')
           echo "🚀 Triggering $ENV_UPPER deployment pipeline (ID: ${{ inputs.pipeline_id }})..."
           
           # Debug: Check if ADO_PAT is set
-          if [ -z "${{ secrets.ADO_PAT }}" ]; then
+          if [ -z "$ADO_PAT" ]; then
             echo "❌ ADO_PAT secret is not set or empty"
             exit 1
           fi
@@ -124,7 +126,7 @@ jobs:
           # Trigger the pipeline
           RESPONSE=$(curl -s -w "\nHTTP_STATUS:%{http_code}" -X POST \
             "https://dev.azure.com/CostcoWholesale/Manufacturing/_apis/pipelines/${{ inputs.pipeline_id }}/runs?api-version=7.0" \
-            -H "Authorization: Bearer ${{ secrets.ADO_PAT }}" \
+            -H "Authorization: Bearer $ADO_PAT" \
             -H "Content-Type: application/json" \
             -d "$PARAMS")
           
@@ -140,15 +142,18 @@ jobs:
             echo "$BODY" | jq '.'
             exit 1
           fi
-        env:
-          ADO_PAT: ${{ secrets.ADO_PAT }}
           
           echo "run_id=$RUN_ID" >> $GITHUB_OUTPUT
           echo "✅ Pipeline triggered successfully (Run ID: $RUN_ID)"
           echo "🔗 https://dev.azure.com/CostcoWholesale/Manufacturing/_build/results?buildId=$RUN_ID"
+
+      - name: Wait for Pipeline Completion
+        env:
+          ADO_PAT: ${{ secrets.ADO_PAT }}
+        run: |
+          RUN_ID="${{ steps.deploy.outputs.run_id }}"
+          echo "⏳ Waiting for pipeline $RUN_ID to complete..."
           
-          # Wait for completion
-          echo "⏳ Waiting for pipeline to complete..."
           MAX_WAIT=7200  # 2 hours
           ELAPSED=0
           
@@ -158,7 +163,7 @@ jobs:
             
             STATUS_RESPONSE=$(curl -s \
               "https://dev.azure.com/CostcoWholesale/Manufacturing/_apis/build/builds/$RUN_ID?api-version=7.0" \
-              -H "Authorization: Bearer ${{ secrets.ADO_PAT }}")
+              -H "Authorization: Bearer $ADO_PAT")
             
             STATUS=$(echo "$STATUS_RESPONSE" | jq -r '.status')
             RESULT=$(echo "$STATUS_RESPONSE" | jq -r '.result')
