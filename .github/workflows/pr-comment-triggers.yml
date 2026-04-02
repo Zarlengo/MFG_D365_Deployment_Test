@@ -132,18 +132,18 @@ jobs:
             CURRENT_BODY=$(gh api "/repos/${{ github.repository }}/issues/comments/$COMMENT_ID" --jq '.body')
             
             cat > /tmp/comment.txt <<EOF
-            $CURRENT_BODY
+$CURRENT_BODY
 
-            ---
+---
 
-            ❌ **$ENV_UPPER Deployment Blocked**
+❌ **$ENV_UPPER Deployment Blocked**
 
-            This PR must be approved before deployment.
+This PR must be approved before deployment.
 
-            Please have a team member review and approve this PR first, then try again.
+Please have a team member review and approve this PR first, then try again.
 
-            [View workflow run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
-            EOF
+[View workflow run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
+EOF
             
             gh api \
               --method PATCH \
