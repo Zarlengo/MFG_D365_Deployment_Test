@@ -104,40 +104,13 @@ jobs:
           # Trim whitespace from PAT
           ADO_PAT=$(echo "$ADO_PAT" | tr -d '[:space:]')
           
-          # Debug: Check if ADO_PAT is set
-          if [ -z "$ADO_PAT" ]; then
-            echo "❌ ADO_PAT secret is not set or empty"
-            exit 1
-          fi
-          echo "✓ ADO_PAT is set (length: ${#ADO_PAT})"
-          
-          # Test PAT by getting organization info
-          echo "Testing PAT authentication..."
-          TEST_RESPONSE=$(curl -s -w "\nHTTP_STATUS:%{http_code}" \
-            -u ":$ADO_PAT" \
-            "https://dev.azure.com/CostcoWholesale/_apis/projects?api-version=7.0")
-          
-          TEST_STATUS=$(echo "$TEST_RESPONSE" | grep "HTTP_STATUS:" | cut -d':' -f2)
-          echo "PAT test status: $TEST_STATUS"
-          
-          if [ "$TEST_STATUS" != "200" ]; then
-            echo "❌ PAT authentication failed!"
-            TEST_BODY=$(echo "$TEST_RESPONSE" | sed '/HTTP_STATUS:/d')
-            echo "$TEST_BODY" | head -20
-            exit 1
-          fi
-          echo "✓ PAT authentication successful"
-          
           # Build parameters JSON (escape special characters)
-          PR_TITLE_ESCAPED=$(echo "${{ steps.pr_info.outputs.pr_title }}" | jq -Rs .)
-          PR_URL_ESCAPED=$(echo "${{ steps.pr_info.outputs.pr_url }}" | jq -Rs .)
-          
           PARAMS=$(jq -n \
             --arg branch "${{ inputs.pr_branch }}" \
             --arg env "${{ inputs.environment }}" \
             --arg prNum "${{ inputs.pr_number }}" \
-            --argjson prTitle "$PR_TITLE_ESCAPED" \
-            --argjson prUrl "$PR_URL_ESCAPED" \
+            --arg prTitle "${{ steps.pr_info.outputs.pr_title }}" \
+            --arg prUrl "${{ steps.pr_info.outputs.pr_url }}" \
             --arg triggeredBy "${{ inputs.triggered_by || github.actor }}" \
             '{
               templateParameters: {
@@ -150,11 +123,7 @@ jobs:
               }
             }')
           
-          echo "Parameters to send:"
-          echo "$PARAMS" | jq '.'
-          
-          echo "Triggering pipeline..."
-          # Trigger the pipeline using -u flag (simpler than manual base64)
+          # Trigger the pipeline
           RESPONSE=$(curl -s -w "\nHTTP_STATUS:%{http_code}" -X POST \
             -u ":$ADO_PAT" \
             "https://dev.azure.com/CostcoWholesale/Manufacturing/_apis/pipelines/${{ inputs.pipeline_id }}/runs?api-version=7.0" \
