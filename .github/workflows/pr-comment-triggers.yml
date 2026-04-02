@@ -93,14 +93,57 @@ jobs:
           GH_TOKEN: ${{ github.token }}
 
   # ============================================
+  # Check PR Approval
+  # ============================================
+  check-approval:
+    name: Check PR Approval
+    runs-on: ubuntu-latest
+    needs: [parse]
+    if: |
+      needs.parse.outputs.valid == 'true' &&
+      needs.parse.outputs.action == 'deploy'
+    outputs:
+      approved: ${{ steps.check.outputs.approved }}
+    
+    steps:
+      - name: Check if PR is approved
+        id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          echo "🔍 Checking approval status for PR #${{ github.event.issue.number }}..."
+          
+          # Get PR reviews
+          REVIEWS=$(gh api "/repos/${{ github.repository }}/pulls/${{ github.event.issue.number }}/reviews" \
+            --jq '[.[] | select(.state == "APPROVED")] | length')
+          
+          if [ "$REVIEWS" -gt 0 ]; then
+            echo "✅ PR has $REVIEWS approval(s)"
+            echo "approved=true" >> $GITHUB_OUTPUT
+          else
+            echo "❌ PR is not approved"
+            echo "approved=false" >> $GITHUB_OUTPUT
+            
+            # Comment on PR
+            gh pr comment ${{ github.event.issue.number }} \
+              --repo "${{ github.repository }}" \
+              --body "❌ **Deployment blocked**: This PR must be approved before deployment.
+              
+Please have a team member review and approve this PR first."
+            
+            exit 1
+          fi
+
+  # ============================================
   # Deploy (Build + Deploy in ADO Pipeline)
   # ============================================
   deploy:
     name: Deploy
-    needs: [parse, get-pr-info]
+    needs: [parse, get-pr-info, check-approval]
     if: |
       needs.parse.outputs.valid == 'true' &&
-      needs.parse.outputs.action == 'deploy'
+      needs.parse.outputs.action == 'deploy' &&
+      needs.check-approval.outputs.approved == 'true'
     uses: ./.github/workflows/ado-pipeline-deploy.yml
     secrets: inherit
     with:
